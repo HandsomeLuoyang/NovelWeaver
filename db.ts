@@ -142,6 +142,44 @@ export const getLinearContext = async (bookId: string, currentNodeId: string, li
   return prevScenes.map(n => `[前文场景: ${n.title}]\n${n.content || '(暂无内容)'}`).join('\n\n');
 };
 
+const extractKeywords = (text: string) => {
+  const lowered = text.toLowerCase();
+  const matches = lowered.match(/[\u4e00-\u9fa5]{2,}|[a-z0-9]{3,}/g) || [];
+  return Array.from(new Set(matches)).slice(0, 40);
+};
+
+export const getSemanticContext = async (
+  bookId: string,
+  currentNodeId: string,
+  query: string,
+  limit: number = 3
+): Promise<string> => {
+  const keywords = extractKeywords(query);
+  if (keywords.length === 0) return "";
+
+  const candidateScenes = (await db.nodes.where({ bookId }).toArray())
+    .filter((node) => node.type === 'scene' && node.id !== currentNodeId && Boolean(node.content?.trim()));
+
+  const scored = candidateScenes
+    .map((scene) => {
+      const haystack = `${scene.title}\n${scene.summary}\n${scene.content || ''}`.toLowerCase();
+      let score = 0;
+      for (const keyword of keywords) {
+        if (haystack.includes(keyword)) score += 1;
+      }
+      return { scene, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  if (scored.length === 0) return "";
+
+  return scored
+    .map((item) => `[相关场景: ${item.scene.title} | 相关度:${item.score}]\n${item.scene.content || ''}`)
+    .join('\n\n');
+};
+
 // Helper to save content history
 export const saveHistory = async (nodeId: string, content: string, action: HistoryAction = 'manual') => {
   // Only save if content is different from the last version

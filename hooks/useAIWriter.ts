@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useStore } from '../store';
 import { StoryNode, Book } from '../types';
 import { draftScene, polishText } from '../services/geminiService';
-import { db, saveHistory, getLinearContext, getAncestors } from '../db';
+import { db, saveHistory, getLinearContext, getAncestors, getSemanticContext } from '../db';
 
 export const useAIWriter = () => {
     const { setGenerating, setGenerationStatus } = useStore();
@@ -34,6 +34,7 @@ export const useAIWriter = () => {
         try {
             const linearContext = await getLinearContext(book.id, node.id, contextLimit);
             const ancestors = await getAncestors(node.id);
+            const semanticContext = await getSemanticContext(book.id, node.id, `${node.title}\n${node.summary}`, 3);
 
             let fullDraft = "";
             await draftScene(
@@ -41,6 +42,7 @@ export const useAIWriter = () => {
                 book,
                 ancestors,
                 linearContext,
+                semanticContext,
                 (chunk) => {
                     fullDraft += chunk;
                     onContentUpdate(fullDraft);

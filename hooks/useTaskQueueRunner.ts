@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useStore } from '../store';
-import { db, getAncestors, getLinearContext, saveHistory, updateBookWordCount } from '../db';
+import { db, getAncestors, getLinearContext, getSemanticContext, saveHistory, updateBookWordCount } from '../db';
 import { expandNode, draftScene, polishText } from '../services/geminiService';
 import { AITask, NodeType } from '../types';
 
@@ -54,9 +54,10 @@ const executeTask = async (task: AITask) => {
 
     const linearContext = await getLinearContext(book.id, node.id, 5);
     const ancestors = await getAncestors(node.id);
+    const semanticContext = await getSemanticContext(book.id, node.id, `${node.title}\n${node.summary}`, 3);
 
     let fullDraft = '';
-    await draftScene(node, book, ancestors, linearContext, (chunk) => {
+    await draftScene(node, book, ancestors, linearContext, semanticContext, (chunk) => {
       fullDraft += chunk;
     });
 

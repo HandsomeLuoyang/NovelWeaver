@@ -455,6 +455,7 @@ export const draftScene = async (
   book: Book,
   ancestors: StoryNode[],
   linearContext: string,
+  semanticContext: string,
   onStream: (chunk: string) => void,
   signal?: AbortSignal
 ): Promise<string> => {
@@ -486,7 +487,11 @@ export const draftScene = async (
     (这是之前发生的剧情，请保持连贯)
     ${linearContext ? linearContext : "（这是故事的开篇）"}
 
-    === 4. 当前任务 (Writing Instruction) ===
+    === 4. 检索记忆 (Semantic Recall) ===
+    (与当前任务语义最相关的历史片段)
+    ${semanticContext ? semanticContext : "（未命中高相关历史片段）"}
+
+    === 5. 当前任务 (Writing Instruction) ===
     当前场景标题: ${node.title}
     当前场景细纲: ${node.summary}
 
