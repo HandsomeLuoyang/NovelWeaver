@@ -38,7 +38,11 @@ describe('pluginRegistry', () => {
       selectedText: 'hello',
     });
 
-    expect(result?.message).toBe('echo:hello');
+    expect(result).toBeDefined();
+    if (!result) {
+      throw new Error('Expected plugin action result');
+    }
+    expect(result.message).toBe('echo:hello');
   });
 
   it('removes actions after unregister', () => {
