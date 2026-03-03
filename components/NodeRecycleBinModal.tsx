@@ -44,7 +44,7 @@ export const NodeRecycleBinModal: React.FC<NodeRecycleBinModalProps> = ({
     };
 
     void load();
-  }, [bookId, isOpen, toast]);
+  }, [bookId, isOpen]);
 
   if (!isOpen) return null;
 

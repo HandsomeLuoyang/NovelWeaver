@@ -42,7 +42,7 @@ export const BookRecycleBinModal: React.FC<BookRecycleBinModalProps> = ({
     };
 
     void load();
-  }, [isOpen, toast]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
