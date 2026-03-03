@@ -466,25 +466,35 @@ export const Library: React.FC = () => {
                             </div>
                             <div className="flex-1 h-px bg-border/30" />
                             <span className="text-xs text-muted-foreground/40 font-mono">
-                                {books.length}
+                                {filteredBooks.length}/{books.length}
                             </span>
                         </div>
 
-                        {/* Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            <AnimatePresence mode="popLayout">
-                                {books.map((book, index) => (
-                                    <BookCard
-                                        key={book.id}
-                                        book={book}
-                                        index={index}
-                                        onClick={() => setCurrentBook(book)}
-                                        onDelete={(e) => deleteBook(e, book.id)}
-                                        onExport={(e) => handleExport(e, book)}
-                                    />
-                                ))}
-                            </AnimatePresence>
+                        <div className="max-w-md">
+                            <SearchBar books={books} onFilter={setFilteredBooks} />
                         </div>
+
+                        {/* Grid */}
+                        {filteredBooks.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                <AnimatePresence mode="popLayout">
+                                    {filteredBooks.map((book, index) => (
+                                        <BookCard
+                                            key={book.id}
+                                            book={book}
+                                            index={index}
+                                            onClick={() => setCurrentBook(book)}
+                                            onDelete={(e) => deleteBook(e, book.id)}
+                                            onExport={(e) => handleExport(e, book)}
+                                        />
+                                    ))}
+                                </AnimatePresence>
+                            </div>
+                        ) : (
+                            <div className="rounded-xl border border-dashed border-border bg-secondary/20 py-12 text-center text-sm text-muted-foreground">
+                                没有匹配到作品，试试换个关键词。
+                            </div>
+                        )}
                     </motion.div>
                 )}
 

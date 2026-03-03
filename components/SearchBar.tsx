@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Book } from '../types';
 import { Icons } from './Icons';
-import { motion, AnimatePresence } from 'framer-motion';
-import { db } from '../db';
 
 interface SearchBarProps {
   books: Book[];
@@ -12,9 +10,7 @@ interface SearchBarProps {
 export const SearchBar: React.FC<SearchBarProps> = ({ books, onFilter }) => {
   const [query, setQuery] = useState('');
 
-  const handleSearch = (value: string) => {
-    setQuery(value);
-
+  const runFilter = (value: string) => {
     if (!value.trim()) {
       onFilter(books);
       return;
@@ -32,6 +28,15 @@ export const SearchBar: React.FC<SearchBarProps> = ({ books, onFilter }) => {
 
     onFilter(filtered);
   };
+
+  const handleSearch = (value: string) => {
+    setQuery(value);
+    runFilter(value);
+  };
+
+  useEffect(() => {
+    runFilter(query);
+  }, [books]);
 
   return (
     <div className="relative w-full max-w-md">
