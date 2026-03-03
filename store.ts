@@ -1,8 +1,20 @@
 import { create } from 'zustand';
 import { persist, PersistStorage } from 'zustand/middleware';
-import { Book, AIModel, ModelConfig, ChatMessage, AITask, AITaskStatus, AITaskType, AIUsageEntry, EditorTypographySettings } from './types';
+import {
+  Book,
+  AIModel,
+  ModelConfig,
+  ChatMessage,
+  AITask,
+  AITaskStatus,
+  AITaskType,
+  AIUsageEntry,
+  EditorTypographySettings,
+  PromptProfile,
+} from './types';
 import type { Toast } from './hooks/useToast';
 import { DEFAULT_EDITOR_TYPOGRAPHY, sanitizeEditorTypography } from './services/typography';
+import { clonePromptProfile, createDefaultPromptProfile, normalizePromptProfile, normalizePromptProfiles } from './services/promptProfiles';
 
 interface AppState {
   // Session State (Not persisted usually, but for this app simplistic is fine)
@@ -21,6 +33,8 @@ interface AppState {
   models: AIModel[];
   modelConfig: ModelConfig;
   editorTypography: EditorTypographySettings;
+  promptProfiles: PromptProfile[];
+  activePromptProfileId: string;
 
   // Chat State (Ephemeral)
   chatHistory: Record<string, ChatMessage[]>; // bookId -> messages
@@ -66,10 +80,15 @@ interface AppState {
   updateModelConfig: (config: Partial<ModelConfig>) => void;
   updateEditorTypography: (config: Partial<EditorTypographySettings>) => void;
   resetEditorTypography: () => void;
+  createPromptProfile: (name?: string, sourceProfileId?: string) => string;
+  duplicatePromptProfile: (profileId: string) => string | null;
+  savePromptProfile: (profile: PromptProfile) => void;
+  deletePromptProfile: (profileId: string) => void;
+  setActivePromptProfile: (profileId: string) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
 }
 
-type PersistedState = Pick<AppState, 'models' | 'modelConfig' | 'theme' | 'editorTypography'>;
+type PersistedState = Pick<AppState, 'models' | 'modelConfig' | 'theme' | 'editorTypography' | 'promptProfiles' | 'activePromptProfileId'>;
 
 // Default Models
 const defaultModels: AIModel[] = [
@@ -104,6 +123,9 @@ const defaultConfig: ModelConfig = {
   enableQualityCheck: false,
   enableCreativitySeeds: true
 };
+
+const defaultPromptProfiles = normalizePromptProfiles([createDefaultPromptProfile()]);
+const defaultActivePromptProfileId = defaultPromptProfiles[0]?.id || 'prompt-default';
 
 const SETTINGS_ENDPOINT = '/api/storage/models';
 const TASK_QUEUE_STORAGE_KEY = 'novelweaver-task-queue';
@@ -236,6 +258,21 @@ const persistUsageLog = (usageLog: AIUsageEntry[]) => {
 
 const restoredUsageLog = readUsageLog();
 
+const resolvePromptState = (
+  promptProfiles: PromptProfile[] | undefined,
+  activePromptProfileId: string | undefined
+) => {
+  const normalizedProfiles = normalizePromptProfiles(promptProfiles);
+  const hasActive = normalizedProfiles.some((profile) => profile.id === activePromptProfileId);
+
+  return {
+    promptProfiles: normalizedProfiles,
+    activePromptProfileId: hasActive
+      ? (activePromptProfileId as string)
+      : normalizedProfiles[0]?.id || defaultActivePromptProfileId,
+  };
+};
+
 export const useStore = create<AppState>()(
   persist<AppState, [], [], PersistedState>(
     (set) => ({
@@ -256,6 +293,8 @@ export const useStore = create<AppState>()(
       models: defaultModels,
       modelConfig: defaultConfig,
       editorTypography: DEFAULT_EDITOR_TYPOGRAPHY,
+      promptProfiles: defaultPromptProfiles,
+      activePromptProfileId: defaultActivePromptProfileId,
       theme: 'system',
 
       setCurrentBook: (book) => set((state) => {
@@ -374,19 +413,96 @@ export const useStore = create<AppState>()(
       resetEditorTypography: () => set(() => ({
         editorTypography: DEFAULT_EDITOR_TYPOGRAPHY
       })),
+      createPromptProfile: (name, sourceProfileId) => {
+        let createdId = '';
+        set((state) => {
+          const sourceProfile = state.promptProfiles.find((profile) => profile.id === sourceProfileId)
+            || state.promptProfiles.find((profile) => profile.id === state.activePromptProfileId)
+            || state.promptProfiles[0]
+            || createDefaultPromptProfile();
+
+          const created = clonePromptProfile(sourceProfile, name);
+          createdId = created.id;
+          return {
+            promptProfiles: normalizePromptProfiles([...state.promptProfiles, created]),
+            activePromptProfileId: created.id,
+          };
+        });
+        return createdId;
+      },
+      duplicatePromptProfile: (profileId) => {
+        let createdId: string | null = null;
+        set((state) => {
+          const sourceProfile = state.promptProfiles.find((profile) => profile.id === profileId);
+          if (!sourceProfile) return {};
+          const duplicated = clonePromptProfile(sourceProfile);
+          createdId = duplicated.id;
+          return {
+            promptProfiles: normalizePromptProfiles([...state.promptProfiles, duplicated]),
+            activePromptProfileId: duplicated.id,
+          };
+        });
+        return createdId;
+      },
+      savePromptProfile: (profile) => set((state) => {
+        const normalized = normalizePromptProfile({
+          ...profile,
+          updatedAt: Date.now(),
+        });
+        const existingIndex = state.promptProfiles.findIndex((item) => item.id === normalized.id);
+        const nextProfiles = existingIndex >= 0
+          ? state.promptProfiles.map((item) => (item.id === normalized.id ? normalized : item))
+          : [...state.promptProfiles, normalized];
+
+        return {
+          promptProfiles: normalizePromptProfiles(nextProfiles),
+        };
+      }),
+      deletePromptProfile: (profileId) => set((state) => {
+        const target = state.promptProfiles.find((profile) => profile.id === profileId);
+        if (!target || target.isBuiltin) return {};
+
+        const filtered = state.promptProfiles.filter((profile) => profile.id !== profileId);
+        const resolved = resolvePromptState(filtered, state.activePromptProfileId === profileId ? undefined : state.activePromptProfileId);
+        return resolved;
+      }),
+      setActivePromptProfile: (profileId) => set((state) => {
+        const exists = state.promptProfiles.some((profile) => profile.id === profileId);
+        if (!exists) return {};
+        return { activePromptProfileId: profileId };
+      }),
       setTheme: (theme) => set({ theme }),
     }),
     {
       name: 'novelweaver-storage',
       storage: settingsStorage,
       onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const resolved = resolvePromptState(state.promptProfiles, state.activePromptProfileId);
+        const safeTypography = sanitizeEditorTypography(state.editorTypography || DEFAULT_EDITOR_TYPOGRAPHY);
+        state.promptProfiles = resolved.promptProfiles;
+        state.activePromptProfileId = resolved.activePromptProfileId;
+        state.editorTypography = safeTypography;
         console.log('Settings rehydrated from local file');
+      },
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState || {}) as Partial<PersistedState>;
+        const resolved = resolvePromptState(persisted.promptProfiles, persisted.activePromptProfileId);
+        return {
+          ...currentState,
+          ...persisted,
+          editorTypography: sanitizeEditorTypography(persisted.editorTypography || currentState.editorTypography),
+          promptProfiles: resolved.promptProfiles,
+          activePromptProfileId: resolved.activePromptProfileId,
+        };
       },
       partialize: (state): PersistedState => ({
         models: state.models,
         modelConfig: state.modelConfig,
         theme: state.theme,
-        editorTypography: state.editorTypography
+        editorTypography: state.editorTypography,
+        promptProfiles: state.promptProfiles,
+        activePromptProfileId: state.activePromptProfileId,
       }), // Only persist settings
     }
   )

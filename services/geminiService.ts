@@ -1,14 +1,15 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { Book, StoryNode, NodeType } from '../types';
+import { Book, StoryNode, NodeType, PromptTaskType } from '../types';
 import { GenesisResponse, ExpansionResponse, GenesisResponseSchema, ExpansionResponseSchema } from '../schemas';
 import { useStore } from '../store';
 import {
   buildOpenAIChatCompletionsUrl,
   formatOpenAINetworkError,
 } from './openaiCompat';
+import { createDefaultPromptProfile, renderPrompt } from './promptProfiles';
 
 // Type definitions for internal task identification
-type TaskType = 'genesis' | 'expansion' | 'drafting' | 'polishing' | 'chat';
+type TaskType = PromptTaskType;
 type CreativityProfile = {
   genesis: number;
   expansion: number;
@@ -73,6 +74,31 @@ const getPromptControls = (task: TaskType, config: TaskRuntimeConfig) => {
   }
 
   return parts.length > 0 ? `${parts.join('\n\n')}\n` : '';
+};
+
+const getActivePromptProfile = () => {
+  const state = useStore.getState();
+  const builtin = createDefaultPromptProfile();
+  const profiles = (state.promptProfiles && state.promptProfiles.length > 0)
+    ? state.promptProfiles
+    : [builtin];
+  return profiles.find((profile) => profile.id === state.activePromptProfileId)
+    || profiles[0]
+    || builtin;
+};
+
+const getTaskPrompts = (
+  task: TaskType,
+  variables: Record<string, string | number | undefined>
+) => {
+  const profile = getActivePromptProfile();
+  const fallback = createDefaultPromptProfile().templates[task];
+  const template = profile.templates?.[task] || fallback;
+
+  return {
+    systemPrompt: renderPrompt(template.systemPrompt || fallback.systemPrompt, variables).trim(),
+    userPrompt: renderPrompt(template.userPrompt || fallback.userPrompt, variables).trim(),
+  };
 };
 
 // Helper to get configuration
@@ -316,24 +342,12 @@ export const genesis = async (userPrompt: string, signal?: AbortSignal): Promise
   updateStatus("正在连接创世引擎...");
   const config = getConfigForTask('genesis');
   const controls = getPromptControls('genesis', config);
-
-  const systemPrompt = "你是'织梦机'创世引擎。你将灵感种子培育成参天大树。请全程使用中文回答。";
-  const userContent = `
-       你是一位世界级的通俗小说家和金牌编辑。
-
-       ${controls}
-       
-       用户灵感: "${userPrompt}"
-       
-       任务:
-       1. 起一个吸引人的中文书名。
-       2. 将灵感扩写为 300 字的核心梗概（类似封底简介）。
-       3. 定义世界观设定/规则（200 字）。
-       4. 创造 5 个有深度且有秘密的主要角色。
-       5. 规划故事的第一层级（卷/部）。通常为 3-5 卷。
-       
-       请确保所有输出均为简体中文。
-     `;
+  const prompts = getTaskPrompts('genesis', {
+    controls,
+    userPrompt,
+  });
+  const userContent = prompts.userPrompt;
+  const systemPrompt = prompts.systemPrompt;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -424,31 +438,17 @@ export const expandNode = async (
   updateStatus(`正在分析节点: ${parentNode.title}...`);
   const config = getConfigForTask('expansion');
   const controls = getPromptControls('expansion', config);
-
-  const prompt = `
-    [角色] 你是网文界的大神级作家，擅长构建严密的剧情结构。
-
-    ${controls}
-
-    [全局上下文]
-    书名: ${book.title}
-    核心梗概: ${book.premise}
-    主要角色: ${book.characters.map(c => c.name + ': ' + c.role).join(', ')}
-
-    [当前焦点]
-    当前层级: ${getNodeTypeName(parentNode.type)}
-    当前标题: ${parentNode.title}
-    当前剧情梗概: ${parentNode.summary}
-
-    [任务]
-    请将上述 "${parentNode.title}" 拆解扩写为 5-10 个 "${getNodeTypeName(childType)}" (子节点)。
-    
-    要求：
-    1. 这一系列的子节点必须能够完整讲述父节点概括的故事。
-    2. 节奏要紧凑，富有冲突。
-    3. 子节点的摘要(summary)应作为下一层级写作的具体指令，越具体越好。
-    4. 请严格使用简体中文。
-  `;
+  const prompts = getTaskPrompts('expansion', {
+    controls,
+    bookTitle: book.title,
+    bookPremise: book.premise,
+    charactersSummary: book.characters.map(c => `${c.name}: ${c.role}`).join(', '),
+    parentTypeName: getNodeTypeName(parentNode.type),
+    parentTitle: parentNode.title,
+    parentSummary: parentNode.summary,
+    childTypeName: getNodeTypeName(childType),
+  });
+  const prompt = prompts.userPrompt;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -477,6 +477,7 @@ export const expandNode = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
+        systemInstruction: prompts.systemPrompt,
         temperature: config.temperature,
       },
     } as any);
@@ -489,7 +490,10 @@ export const expandNode = async (
     // OpenAI Logic
     updateStatus(`正在使用 ${config.modelName} (OpenAI) 构建下层结构...`);
     const messages = [
-      { role: 'system', content: "请返回 JSON 格式：{ \"nodes\": [{ \"title\": \"...\", \"summary\": \"...\" }] }" },
+      {
+        role: 'system',
+        content: `${prompts.systemPrompt}\n请返回 JSON 格式：{ \"nodes\": [{ \"title\": \"...\", \"summary\": \"...\" }] }`
+      },
       { role: 'user', content: prompt }
     ];
 
@@ -525,42 +529,19 @@ export const draftScene = async (
   const hierarchyContext = ancestors.length > 0
     ? ancestors.map(a => `[${getNodeTypeName(a.type)}: ${a.title}]\n梗概: ${a.summary}`).join('\n\n')
     : "无上级结构信息";
-
-  const prompt = `
-    [Role] 你是白金级畅销小说家。请根据以下全方位上下文撰写正文。
-
-    ${controls}
-
-    === 1. 宏观世界 (World Bible) ===
-    书名: ${book.title}
-    核心梗概: ${book.premise}
-    世界观设定: ${book.worldSetting}
-    主要角色表: ${JSON.stringify(book.characters.map(c => ({ name: c.name, role: c.role, description: c.description })))}
-
-    === 2. 剧情脉络 (Structural Context) ===
-    (从上至下，你是这棵故事树的末端叶子)
-    ${hierarchyContext}
-
-    === 3. 近期记忆 (Linear Memory) ===
-    (这是之前发生的剧情，请保持连贯)
-    ${linearContext ? linearContext : "（这是故事的开篇）"}
-
-    === 4. 检索记忆 (Semantic Recall) ===
-    (与当前任务语义最相关的历史片段)
-    ${semanticContext ? semanticContext : "（未命中高相关历史片段）"}
-
-    === 5. 当前任务 (Writing Instruction) ===
-    当前场景标题: ${node.title}
-    当前场景细纲: ${node.summary}
-
-    === 写作要求 ===
-    1. **一致性**: 严格遵守世界观和角色设定，不要吃书。
-    2. **连贯性**: 紧密承接[近期记忆]的剧情和文风。
-    3. **画面感**: 使用"Show, don't tell"技法，多描写感官细节。
-    4. **节奏**: 这一段落应有起伏，字数控制在 1000-2000 字。
-    5. **格式**: 使用 Markdown 格式。
-    6. **语言**: 简体中文。
-  `;
+  const prompts = getTaskPrompts('drafting', {
+    controls,
+    bookTitle: book.title,
+    bookPremise: book.premise,
+    worldSetting: book.worldSetting,
+    charactersJson: JSON.stringify(book.characters.map(c => ({ name: c.name, role: c.role, description: c.description }))),
+    hierarchyContext,
+    linearContext: linearContext ? linearContext : "（这是故事的开篇）",
+    semanticContext: semanticContext ? semanticContext : "（未命中高相关历史片段）",
+    nodeTitle: node.title,
+    nodeSummary: node.summary,
+  });
+  const prompt = prompts.userPrompt;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -570,6 +551,7 @@ export const draftScene = async (
       model: config.modelName,
       contents: prompt,
       config: {
+        systemInstruction: prompts.systemPrompt,
         temperature: config.temperature
       },
       ...(signal ? { signal } : {}),
@@ -591,7 +573,7 @@ export const draftScene = async (
     // OpenAI Logic
     updateStatus(`正在使用 ${config.modelName} (OpenAI) 编织文字...`);
     const messages = [
-      { role: 'system', content: "你是白金级畅销小说家。" },
+      { role: 'system', content: prompts.systemPrompt },
       { role: 'user', content: prompt }
     ];
 
@@ -620,34 +602,14 @@ export const polishText = async (
   updateStatus("正在构思润色方案...");
   const config = getConfigForTask('polishing');
   const controls = getPromptControls('polishing', config);
-
-  const prompt = `
-        [角色] 你是专业的文学编辑和润色专家。
-
-        ${controls}
-        
-        [背景信息]
-        书名: ${book.title}
-        世界观风格: ${book.worldSetting.slice(0, 200)}...
-        
-        [上下文片段]
-        ${context.slice(-500)}
-        
-        [待润色文本]
-        "${selection}"
-        
-        [任务]
-        请重写并润色上述 [待润色文本]。
-        要求：
-        1. 提升文采，使其更有画面感和感染力。
-        2. 修复语病，优化句子节奏。
-        3. 保持原意不变，润色后长度控制在原文的 0.7x - 1.8x。
-        4. 严禁输出上下文片段，严禁输出整段场景。
-        5. 仅输出如下格式（不要附加解释）：
-        <POLISHED>
-        这里是润色后的“待润色文本”
-        </POLISHED>
-    `;
+  const prompts = getTaskPrompts('polishing', {
+    controls,
+    bookTitle: book.title,
+    worldSettingSnippet: `${book.worldSetting.slice(0, 200)}...`,
+    contextSnippet: context.slice(-500),
+    selection,
+  });
+  const prompt = prompts.userPrompt;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -657,6 +619,7 @@ export const polishText = async (
       model: config.modelName,
       contents: prompt,
       config: {
+        systemInstruction: prompts.systemPrompt,
         temperature: config.temperature
       },
       ...(signal ? { signal } : {}),
@@ -678,7 +641,7 @@ export const polishText = async (
     // OpenAI Logic
     updateStatus(`使用 ${config.modelName} (OpenAI) 逐字推敲...`);
     const messages = [
-      { role: 'system', content: "你是专业的文学编辑和润色专家。" },
+      { role: 'system', content: prompts.systemPrompt },
       { role: 'user', content: prompt }
     ];
 
@@ -706,38 +669,27 @@ export const chat = async (
   // Use chat model for chat as it usually requires decent reasoning
   const config = getConfigForTask('chat');
   const controls = getPromptControls('chat', config);
+  const dialogue = history
+    .map((msg) => {
+      if (msg.role === 'assistant') return `助手: ${msg.content}`;
+      if (msg.role === 'system') return `系统: ${msg.content}`;
+      return `用户: ${msg.content}`;
+    })
+    .join('\n\n');
+  const prompts = getTaskPrompts('chat', {
+    controls,
+    chatContext: context,
+    dialogue,
+  });
 
   const systemMessage = {
-    role: 'system',
-    content: `你是一个专业的写作助手。请根据提供的世界观和当前上下文回答用户的问题。
-
-    ${controls}
-
-    [当前上下文]
-    ${context}
-
-    请用简洁、有帮助的语气回答。如果用户让你写一段内容，请保持与当前文风一致。`
+    role: 'system' as const,
+    content: prompts.systemPrompt,
   };
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
-    const dialogue = history
-      .map((msg) => {
-        if (msg.role === 'assistant') return `助手: ${msg.content}`;
-        if (msg.role === 'system') return `系统: ${msg.content}`;
-        return `用户: ${msg.content}`;
-      })
-      .join('\n\n');
-
-    const prompt = `
-${systemMessage.content}
-
-[对话历史]
-${dialogue}
-
-[任务]
-请基于以上上下文，继续回答最后一个用户问题。回答需简洁、可执行。
-`;
+    const prompt = `${systemMessage.content}\n\n${prompts.userPrompt}`;
 
     const result = await ai.models.generateContentStream({
       model: config.modelName,
@@ -765,7 +717,8 @@ ${dialogue}
     // OpenAI Logic
     const messages = [
       systemMessage,
-      ...history.map(h => ({ role: h.role, content: h.content }))
+      ...history.map(h => ({ role: h.role, content: h.content })),
+      { role: 'user', content: prompts.userPrompt },
     ];
 
     let fullText = "";

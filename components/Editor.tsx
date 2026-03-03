@@ -22,6 +22,7 @@ import { CommandPalette, PaletteCommand } from './CommandPalette';
 import { PluginCenterModal } from './PluginCenterModal';
 import { PublishWorkflowModal } from './PublishWorkflowModal';
 import { TypographySettingsModal } from './TypographySettingsModal';
+import { PromptManagerModal } from './PromptManagerModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'scene-meta' | 'world' | 'characters' | null;
 type AIReviewState =
@@ -60,6 +61,7 @@ export const Editor: React.FC = () => {
     const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
     const [isPluginCenterOpen, setIsPluginCenterOpen] = useState(false);
     const [isTypographySettingsOpen, setIsTypographySettingsOpen] = useState(false);
+    const [isPromptManagerOpen, setIsPromptManagerOpen] = useState(false);
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
@@ -457,6 +459,11 @@ export const Editor: React.FC = () => {
             run: () => setIsTypographySettingsOpen(true)
         },
         {
+            id: 'open-prompt-manager',
+            title: '打开提示词管理',
+            run: () => setIsPromptManagerOpen(true)
+        },
+        {
             id: 'toggle-zen',
             title: isZenMode ? '退出禅模式' : '进入禅模式',
             hint: '专注写作视图',
@@ -685,6 +692,14 @@ export const Editor: React.FC = () => {
                     </button>
 
                     <button
+                        onClick={() => setIsPromptManagerOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="提示词管理"
+                    >
+                        <Icons.FileText size={18} />
+                    </button>
+
+                    <button
                         onClick={() => setIsTypographySettingsOpen(true)}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border border-border/80 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                         title="排版设置（字体、字号、行距、字距、版心宽度）"
@@ -841,6 +856,11 @@ export const Editor: React.FC = () => {
             <TypographySettingsModal
                 isOpen={isTypographySettingsOpen}
                 onClose={() => setIsTypographySettingsOpen(false)}
+            />
+
+            <PromptManagerModal
+                isOpen={isPromptManagerOpen}
+                onClose={() => setIsPromptManagerOpen(false)}
             />
 
             <PluginCenterModal

@@ -99,6 +99,22 @@ export interface EditorTypographySettings {
   paragraphSpacing: number;
 }
 
+export type PromptTaskType = 'genesis' | 'expansion' | 'drafting' | 'polishing' | 'chat';
+
+export interface PromptTemplatePair {
+  systemPrompt: string;
+  userPrompt: string;
+}
+
+export interface PromptProfile {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  isBuiltin?: boolean;
+  templates: Record<PromptTaskType, PromptTemplatePair>;
+}
+
 export interface ExportData {
   version: number;
   book: Book;
