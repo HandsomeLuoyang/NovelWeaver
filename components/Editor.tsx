@@ -16,8 +16,14 @@ import { ModelSettingsModal } from './ModelSettingsModal';
 import { TaskQueueModal } from './TaskQueueModal';
 import { ConsistencyCheckModal } from './ConsistencyCheckModal';
 import { WritingStats } from './WritingStats';
+import { AIReviewModal } from './AIReviewModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
+type AIReviewState = {
+    mode: 'draft' | 'polish';
+    originalContent: string;
+    generatedContent: string;
+};
 
 export const Editor: React.FC = () => {
     const { activeNodeId, currentBook, setCurrentBook, isGenerating: isGlobalGenerating, isZenMode, toggleZenMode } = useStore();
@@ -35,6 +41,8 @@ export const Editor: React.FC = () => {
     const [isTaskQueueOpen, setIsTaskQueueOpen] = useState(false);
     const [isConsistencyOpen, setIsConsistencyOpen] = useState(false);
     const [floatingContextPanel, setFloatingContextPanel] = useState<FloatingContextPanel>(null);
+    const [aiReview, setAiReview] = useState<AIReviewState | null>(null);
+    const [isReviewPending, setIsReviewPending] = useState(false);
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
@@ -84,6 +92,8 @@ export const Editor: React.FC = () => {
         setViewMode('edit');
         setSelectionRange(null);
         setFloatingContextPanel(null);
+        setAiReview(null);
+        setIsReviewPending(false);
     }, [activeNodeId]);
 
     useEffect(() => {
@@ -131,12 +141,11 @@ export const Editor: React.FC = () => {
         }
     };
 
-    // No changes needed here, keeping auto-save logic but it might conflict with manual history. 
-    // Let's optimize: only save to history on "save" or after a delay.
     useEffect(() => {
+        if (isGenerating || isReviewPending) return;
         const timer = setTimeout(() => handleManualSave('manual'), 2000);
         return () => clearTimeout(timer);
-    }, [content]);
+    }, [content, isGenerating, isReviewPending]);
 
     // Handle Text Selection
     const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -157,20 +166,32 @@ export const Editor: React.FC = () => {
     const handleAIDraft = async (contextLimit: number) => {
         if (!node || !currentBook) return;
         setViewMode('edit');
+        const originalContent = content;
+        setIsReviewPending(true);
         try {
-            await aiDraft(node, currentBook, (newContent) => {
+            const draft = await aiDraft(node, currentBook, (newContent) => {
                 setContent(newContent);
                 if (editorRef.current) {
                     editorRef.current.scrollTop = editorRef.current.scrollHeight;
                 }
-            }, contextLimit);
-            // Reload history after generation
-            const h = await getHistory(node.id);
-            setHistory(h);
-            setHistoryIndex(h.length - 1);
-            toast.success('草稿生成完成！');
+            }, contextLimit, { persist: false });
+
+            if (!draft) {
+                setContent(originalContent);
+                setIsReviewPending(false);
+                return;
+            }
+
+            setAiReview({
+                mode: 'draft',
+                originalContent,
+                generatedContent: draft
+            });
+            toast.info('草稿生成完成，请确认采纳段落');
         } catch (e) {
             console.error('Draft failed', e);
+            setContent(originalContent);
+            setIsReviewPending(false);
             toast.error('草稿生成失败', {
                 label: "重试",
                 onClick: () => handleAIDraft(contextLimit)
@@ -180,34 +201,79 @@ export const Editor: React.FC = () => {
 
     const handlePolish = async () => {
         if (!node || !currentBook || !selectionRange) return;
+        const originalContent = content;
+        setIsReviewPending(true);
         try {
             const preContext = content.substring(0, selectionRange.start);
             const postContext = content.substring(selectionRange.end);
 
-            await aiPolish(
+            const result = await aiPolish(
                 selectedText,
                 preContext,
                 postContext,
                 currentBook,
                 node.id,
-                (newContent) => setContent(newContent)
+                (newContent) => setContent(newContent),
+                { persist: false }
             );
 
-            // Reload history after polish
-            const h = await getHistory(node.id);
-            setHistory(h);
-            setHistoryIndex(h.length - 1);
+            if (!result) {
+                setContent(originalContent);
+                setIsReviewPending(false);
+                return;
+            }
+
+            setAiReview({
+                mode: 'polish',
+                originalContent,
+                generatedContent: result.finalContent
+            });
 
             setSelectionRange(null);
             setSelectedText('');
-            toast.success('润色完成！');
+            toast.info('润色完成，请确认采纳段落');
         } catch (e) {
             console.error('Polish failed', e);
+            setContent(originalContent);
+            setIsReviewPending(false);
             toast.error('润色失败', {
                 label: "重试",
                 onClick: handlePolish
             });
         }
+    };
+
+    const handleCancelAIReview = () => {
+        if (!aiReview) return;
+
+        setContent(aiReview.originalContent);
+        setAiReview(null);
+        setIsReviewPending(false);
+        toast.info('已放弃本次 AI 结果');
+    };
+
+    const handleApplyAIReview = async (acceptedContent: string) => {
+        if (!node || !aiReview) return;
+        const finalContent = acceptedContent.trim();
+        if (!finalContent) {
+            toast.warning('请至少选择一段内容');
+            return;
+        }
+
+        await db.nodes.update(node.id, { content: finalContent, status: finalContent.length > 100 ? 'drafted' : 'outlined' });
+        await saveHistory(node.id, finalContent, aiReview.mode === 'draft' ? 'ai-draft' : 'ai-polish');
+        if (currentBook) {
+            await import('../db').then(mod => mod.updateBookWordCount(currentBook.id));
+        }
+
+        const h = await getHistory(node.id);
+        setHistory(h);
+        setHistoryIndex(h.length - 1);
+        setNode({ ...node, content: finalContent, status: finalContent.length > 100 ? 'drafted' : 'outlined' });
+        setContent(finalContent);
+        setAiReview(null);
+        setIsReviewPending(false);
+        toast.success('已采纳选中段落');
     };
 
     // Handlers for updating sidebar summaries
@@ -486,6 +552,16 @@ export const Editor: React.FC = () => {
                 isOpen={isDraftSettingsOpen}
                 onClose={() => setIsDraftSettingsOpen(false)}
                 onConfirm={handleAIDraft}
+            />
+
+            <AIReviewModal
+                isOpen={Boolean(aiReview)}
+                mode={aiReview?.mode || 'draft'}
+                generatedContent={aiReview?.generatedContent || ''}
+                onCancel={handleCancelAIReview}
+                onApply={(acceptedContent) => {
+                    void handleApplyAIReview(acceptedContent);
+                }}
             />
 
             {/* Workspace Split */}

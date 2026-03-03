@@ -23,11 +23,13 @@ export const useAIWriter = () => {
         node: StoryNode,
         book: Book,
         onContentUpdate: (content: string) => void,
-        contextLimit: number = 5
+        contextLimit: number = 5,
+        options?: { persist?: boolean }
     ) => {
         setIsGeneratingInternal(true);
         setGenerating(true);
         abortControllerRef.current = new AbortController();
+        const shouldPersist = options?.persist !== false;
 
         try {
             const linearContext = await getLinearContext(book.id, node.id, contextLimit);
@@ -46,8 +48,10 @@ export const useAIWriter = () => {
                 abortControllerRef.current.signal
             );
 
-            await db.nodes.update(node.id, { content: fullDraft, status: 'drafted' });
-            await saveHistory(node.id, fullDraft, 'ai-draft');
+            if (shouldPersist) {
+                await db.nodes.update(node.id, { content: fullDraft, status: 'drafted' });
+                await saveHistory(node.id, fullDraft, 'ai-draft');
+            }
             return fullDraft;
         } catch (error: any) {
             if (error.name === 'AbortError') {
@@ -69,11 +73,13 @@ export const useAIWriter = () => {
         postContext: string,
         book: Book,
         nodeId: string,
-        onContentUpdate: (newFullContent: string) => void
+        onContentUpdate: (newFullContent: string) => void,
+        options?: { persist?: boolean }
     ) => {
         setIsGeneratingInternal(true);
         setGenerating(true);
         abortControllerRef.current = new AbortController();
+        const shouldPersist = options?.persist !== false;
 
         try {
             let polishedSegment = "";
@@ -90,11 +96,13 @@ export const useAIWriter = () => {
 
             const finalContent = preContext + polishedSegment + postContext;
 
-            // Save to DB and History
-            await db.nodes.update(nodeId, { content: finalContent, status: 'drafted' });
-            await saveHistory(nodeId, finalContent, 'ai-polish');
+            if (shouldPersist) {
+                // Save to DB and History
+                await db.nodes.update(nodeId, { content: finalContent, status: 'drafted' });
+                await saveHistory(nodeId, finalContent, 'ai-polish');
+            }
 
-            return finalContent;
+            return { finalContent, polishedSegment };
         } catch (error: any) {
             if (error.name === 'AbortError') {
                 console.log("Polishing aborted");
