@@ -11,6 +11,7 @@ import { useToast } from '../hooks/useToast';
 import { NodeCreateModal } from './NodeCreateModal';
 import { StructureVariationModal } from './StructureVariationModal';
 import { NodeRecycleBinModal } from './NodeRecycleBinModal';
+import { SceneBoardModal } from './SceneBoardModal';
 
 // Recursive Node Component
 const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level }) => {
@@ -417,6 +418,7 @@ export const Outliner: React.FC = () => {
     const toast = useToast();
     const [isFloatingOutlinerOpen, setIsFloatingOutlinerOpen] = useState(false);
     const [isNodeRecycleBinOpen, setIsNodeRecycleBinOpen] = useState(false);
+    const [isSceneBoardOpen, setIsSceneBoardOpen] = useState(false);
     const [outlineSearch, setOutlineSearch] = useState('');
     const [showRootCreateModal, setShowRootCreateModal] = useState(false);
 
@@ -544,6 +546,13 @@ export const Outliner: React.FC = () => {
                             title="节点回收站"
                         >
                             <Icons.Trash2 size={14} />
+                        </button>
+                        <button
+                            onClick={() => setIsSceneBoardOpen(true)}
+                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
+                            title="场景看板"
+                        >
+                            <Icons.Layout size={14} />
                         </button>
                         <button
                             onClick={() => setIsFloatingOutlinerOpen(true)}
@@ -710,6 +719,12 @@ export const Outliner: React.FC = () => {
                     setActiveNodeId(nodeId);
                     toast.success('已定位到恢复节点');
                 }}
+            />
+
+            <SceneBoardModal
+                isOpen={isSceneBoardOpen}
+                onClose={() => setIsSceneBoardOpen(false)}
+                bookId={currentBook.id}
             />
         </>
     );
