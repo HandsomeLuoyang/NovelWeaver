@@ -39,7 +39,9 @@ import {
   Loader2,
   History,
   User,
-  Layout
+  Layout,
+  Puzzle,
+  Bot
 } from 'lucide-react';
 
 export const Icons = {
@@ -84,5 +86,7 @@ export const Icons = {
   Loader2,
   History,
   User,
-  Layout
+  Layout,
+  Puzzle,
+  Bot
 };

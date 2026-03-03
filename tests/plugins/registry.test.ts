@@ -89,11 +89,22 @@ describe('pluginRegistry', () => {
   it('initializes builtin plugins only once', () => {
     initializeBuiltinPlugins();
     const countAfterFirst = pluginRegistry.listPlugins().filter((plugin) => plugin.id === 'builtin.metadata-helper').length;
+    const allBuiltinIds = pluginRegistry
+      .listPlugins()
+      .map((plugin) => plugin.id)
+      .filter((id) => id.startsWith('builtin.'));
 
     initializeBuiltinPlugins();
     const countAfterSecond = pluginRegistry.listPlugins().filter((plugin) => plugin.id === 'builtin.metadata-helper').length;
 
     expect(countAfterFirst).toBe(1);
     expect(countAfterSecond).toBe(1);
+    expect(allBuiltinIds).toEqual(
+      expect.arrayContaining([
+        'builtin.metadata-helper',
+        'builtin.scene-ops',
+        'builtin.continuity-toolkit',
+      ]),
+    );
   });
 });

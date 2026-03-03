@@ -1,4 +1,6 @@
 import { metadataHelperPlugin } from './builtin/metadataHelperPlugin';
+import { sceneOpsPlugin } from './builtin/sceneOpsPlugin';
+import { continuityToolkitPlugin } from './builtin/continuityToolkitPlugin';
 import { NovelWeaverPlugin, PluginAction, PluginRunContext, PluginRunResult } from './types';
 
 class PluginRegistry {
@@ -74,4 +76,6 @@ export const initializeBuiltinPlugins = () => {
   if (initialized) return;
   initialized = true;
   pluginRegistry.register(metadataHelperPlugin);
+  pluginRegistry.register(sceneOpsPlugin);
+  pluginRegistry.register(continuityToolkitPlugin);
 };

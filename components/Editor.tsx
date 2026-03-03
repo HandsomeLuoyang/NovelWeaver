@@ -23,11 +23,19 @@ import { PluginCenterModal } from './PluginCenterModal';
 import { PublishWorkflowModal } from './PublishWorkflowModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
-type AIReviewState = {
-    mode: 'draft' | 'polish';
-    originalContent: string;
-    generatedContent: string;
-};
+type AIReviewState =
+    | {
+        mode: 'draft';
+        originalContent: string;
+        generatedContent: string;
+    }
+    | {
+        mode: 'polish';
+        originalContent: string;
+        generatedContent: string;
+        preContext: string;
+        postContext: string;
+    };
 
 export const Editor: React.FC = () => {
     const { activeNodeId, currentBook, setCurrentBook, isGenerating: isGlobalGenerating, isZenMode, toggleZenMode } = useStore();
@@ -268,7 +276,9 @@ export const Editor: React.FC = () => {
             setAiReview({
                 mode: 'polish',
                 originalContent,
-                generatedContent: result.finalContent
+                generatedContent: result.polishedSegment,
+                preContext,
+                postContext
             });
 
             setSelectionRange(null);
@@ -297,11 +307,15 @@ export const Editor: React.FC = () => {
 
     const handleApplyAIReview = async (acceptedContent: string) => {
         if (!node || !aiReview) return;
-        const finalContent = acceptedContent.trim();
-        if (!finalContent) {
+        const accepted = acceptedContent.trim();
+        if (!accepted) {
             toast.warning('请至少选择一段内容');
             return;
         }
+
+        const finalContent = aiReview.mode === 'polish'
+            ? `${aiReview.preContext}${accepted}${aiReview.postContext}`
+            : accepted;
 
         await db.nodes.update(node.id, { content: finalContent, status: finalContent.length > 100 ? 'drafted' : 'outlined' });
         await saveHistory(node.id, finalContent, aiReview.mode === 'draft' ? 'ai-draft' : 'ai-polish');
@@ -571,7 +585,7 @@ export const Editor: React.FC = () => {
                         className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
                         title="插件中心"
                     >
-                        <Icons.Cpu size={18} />
+                        <Icons.Puzzle size={18} />
                     </button>
 
                     {/* Model Settings Button */}

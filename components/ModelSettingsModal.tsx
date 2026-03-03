@@ -77,7 +77,7 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/50">
                     <h2 className="text-lg font-bold text-foreground flex items-center">
-                        <Icons.Cpu className="mr-2 w-5 h-5 text-primary" />
+                        <Icons.Bot className="mr-2 w-5 h-5 text-primary" />
                         AI 模型中控台
                     </h2>
                     <button onClick={onClose} className="p-2 hover:bg-secondary rounded-full text-muted-foreground hover:text-foreground">

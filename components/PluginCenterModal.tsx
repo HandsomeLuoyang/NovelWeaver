@@ -67,7 +67,7 @@ export const PluginCenterModal: React.FC<PluginCenterModalProps> = ({
         <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">
           <div>
             <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-              <Icons.Cpu size={18} className="text-primary" />
+              <Icons.Puzzle size={18} className="text-primary" />
               插件中心
             </h3>
             <p className="text-xs text-muted-foreground mt-1">已注册 {plugins.length} 个插件，可执行扩展动作</p>

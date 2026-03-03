@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useStore } from '../store';
 import { StoryNode, Book } from '../types';
 import { draftScene, polishText } from '../services/geminiService';
+import { extractPolishedSegment } from '../services/polishUtils';
 import { db, saveHistory, getLinearContext, getAncestors, getSemanticContext } from '../db';
 
 export const useAIWriter = () => {
@@ -84,19 +85,39 @@ export const useAIWriter = () => {
         const shouldPersist = options?.persist !== false;
 
         try {
-            let polishedSegment = "";
+            let rawPolishResponse = "";
             await polishText(
                 selectedText,
                 preContext,
                 book,
                 (chunk) => {
-                    polishedSegment += chunk;
-                    onContentUpdate(preContext + polishedSegment + postContext);
+                    rawPolishResponse += chunk;
                 },
                 abortControllerRef.current.signal
             );
 
+            const polishedSegment = extractPolishedSegment(rawPolishResponse);
+            const polishedLength = polishedSegment.trim().length;
+            const selectedLength = selectedText.trim().length;
+
+            if (!polishedLength) {
+                throw new Error('润色结果为空，请重试。');
+            }
+
+            const preHint = preContext.trim().slice(-24);
+            const postHint = postContext.trim().slice(0, 24);
+            const seemsLikeFullScene = (
+                (preHint && polishedSegment.includes(preHint))
+                || (postHint && polishedSegment.includes(postHint))
+            );
+            const abnormalLength = selectedLength > 0 && polishedLength > Math.max(selectedLength * 2.5, selectedLength + 800);
+
+            if (seemsLikeFullScene || abnormalLength) {
+                throw new Error('润色结果疑似包含选区外内容，请缩小选区后重试。');
+            }
+
             const finalContent = preContext + polishedSegment + postContext;
+            onContentUpdate(finalContent);
 
             if (shouldPersist) {
                 // Save to DB and History
