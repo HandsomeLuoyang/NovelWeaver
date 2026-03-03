@@ -21,6 +21,7 @@ import { AIUsagePanel } from './AIUsagePanel';
 import { CommandPalette, PaletteCommand } from './CommandPalette';
 import { PluginCenterModal } from './PluginCenterModal';
 import { PublishWorkflowModal } from './PublishWorkflowModal';
+import { TypographySettingsModal } from './TypographySettingsModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
 type AIReviewState =
@@ -38,7 +39,7 @@ type AIReviewState =
     };
 
 export const Editor: React.FC = () => {
-    const { activeNodeId, currentBook, setCurrentBook, isGenerating: isGlobalGenerating, isZenMode, toggleZenMode } = useStore();
+    const { activeNodeId, currentBook, setCurrentBook, isGenerating: isGlobalGenerating, isZenMode, toggleZenMode, editorTypography } = useStore();
     const { isGenerating, stopGeneration, handleAIDraft: aiDraft, handleAIPolish: aiPolish } = useAIWriter();
     const toast = useToast();
 
@@ -58,6 +59,7 @@ export const Editor: React.FC = () => {
     const [isReviewPending, setIsReviewPending] = useState(false);
     const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
     const [isPluginCenterOpen, setIsPluginCenterOpen] = useState(false);
+    const [isTypographySettingsOpen, setIsTypographySettingsOpen] = useState(false);
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
@@ -448,6 +450,11 @@ export const Editor: React.FC = () => {
             run: () => setIsPluginCenterOpen(true)
         },
         {
+            id: 'open-typography',
+            title: '打开排版设置',
+            run: () => setIsTypographySettingsOpen(true)
+        },
+        {
             id: 'toggle-zen',
             title: isZenMode ? '退出禅模式' : '进入禅模式',
             hint: '专注写作视图',
@@ -475,6 +482,20 @@ export const Editor: React.FC = () => {
             run: () => setViewMode('diff')
         });
     }
+
+    const editorTextStyle = {
+        fontFamily: editorTypography.fontFamily,
+        fontSize: `${editorTypography.fontSize}px`,
+        lineHeight: editorTypography.lineHeight,
+        letterSpacing: `${editorTypography.letterSpacing}px`,
+        maxWidth: `${editorTypography.contentWidth}px`,
+    };
+
+    const previewParagraphStyle = {
+        marginBottom: `${editorTypography.paragraphSpacing}em`,
+        lineHeight: editorTypography.lineHeight,
+        letterSpacing: `${editorTypography.letterSpacing}px`,
+    };
 
     const renderFloatingContextContent = () => {
         if (!floatingContextPanel) return null;
@@ -586,6 +607,14 @@ export const Editor: React.FC = () => {
                         title="插件中心"
                     >
                         <Icons.Puzzle size={18} />
+                    </button>
+
+                    <button
+                        onClick={() => setIsTypographySettingsOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="排版设置"
+                    >
+                        <Icons.Layout size={18} />
                     </button>
 
                     {/* Model Settings Button */}
@@ -733,6 +762,11 @@ export const Editor: React.FC = () => {
                 commands={paletteCommands}
             />
 
+            <TypographySettingsModal
+                isOpen={isTypographySettingsOpen}
+                onClose={() => setIsTypographySettingsOpen(false)}
+            />
+
             <PluginCenterModal
                 isOpen={isPluginCenterOpen}
                 onClose={() => setIsPluginCenterOpen(false)}
@@ -765,18 +799,22 @@ export const Editor: React.FC = () => {
                             onChange={(e) => setContent(e.target.value)}
                             onSelect={handleSelect}
                             placeholder={node.type === 'scene' ? "请在此处开始撰写正文 (支持 Markdown)..." : "此节点为结构节点。请在左侧大纲中点击闪光图标进行扩写。"}
-                            className="flex-1 bg-transparent p-8 md:p-12 resize-none focus:outline-none font-serif text-lg leading-relaxed text-foreground max-w-3xl mx-auto w-full placeholder:text-muted-foreground scrollbar-thin selection:bg-primary/30"
+                            className="flex-1 bg-transparent p-8 md:p-12 resize-none focus:outline-none text-foreground mx-auto w-full placeholder:text-muted-foreground scrollbar-thin selection:bg-primary/30"
+                            style={editorTextStyle}
                         />
                     ) : viewMode === 'preview' ? (
                         <div className="flex-1 overflow-y-auto p-8 md:p-12 scrollbar-thin">
-                            <div className="max-w-3xl mx-auto w-full prose prose-invert prose-lg prose-emerald">
+                            <div
+                                className="mx-auto w-full prose prose-invert prose-emerald"
+                                style={editorTextStyle}
+                            >
                                 <ReactMarkdown
                                     remarkPlugins={[remarkGfm]}
                                     components={{
                                         h1: ({ node, ...props }) => <h1 className="text-3xl font-bold text-primary mb-4" {...props} />,
                                         h2: ({ node, ...props }) => <h2 className="text-2xl font-bold text-foreground mt-8 mb-4" {...props} />,
                                         h3: ({ node, ...props }) => <h3 className="text-xl font-bold text-foreground/80 mt-6 mb-3" {...props} />,
-                                        p: ({ node, ...props }) => <p className="leading-8 text-foreground/90 mb-4" {...props} />,
+                                        p: ({ node, ...props }) => <p className="text-foreground/90" style={previewParagraphStyle} {...props} />,
                                         blockquote: ({ node, ...props }) => <blockquote className="border-l-4 border-primary pl-4 italic text-muted-foreground my-4" {...props} />,
                                     }}
                                 >
@@ -786,7 +824,7 @@ export const Editor: React.FC = () => {
                         </div>
                     ) : (
                         <div className="flex-1 overflow-y-auto p-8 md:p-12 scrollbar-thin">
-                            <div className="max-w-3xl mx-auto w-full">
+                            <div className="mx-auto w-full" style={editorTextStyle}>
                                 <h3 className="text-zinc-500 text-sm mb-4">正在对比：当前草稿 vs 历史版本</h3>
                                 <DiffViewer
                                     oldText={historyIndex >= 0 ? history[historyIndex].content : (node?.content || '')}

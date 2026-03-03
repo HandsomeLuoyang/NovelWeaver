@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist, PersistStorage } from 'zustand/middleware';
-import { Book, AIModel, ModelConfig, ChatMessage, AITask, AITaskStatus, AITaskType, AIUsageEntry } from './types';
+import { Book, AIModel, ModelConfig, ChatMessage, AITask, AITaskStatus, AITaskType, AIUsageEntry, EditorTypographySettings } from './types';
 import type { Toast } from './hooks/useToast';
+import { DEFAULT_EDITOR_TYPOGRAPHY, sanitizeEditorTypography } from './services/typography';
 
 interface AppState {
   // Session State (Not persisted usually, but for this app simplistic is fine)
@@ -19,6 +20,7 @@ interface AppState {
   theme: 'light' | 'dark' | 'system';
   models: AIModel[];
   modelConfig: ModelConfig;
+  editorTypography: EditorTypographySettings;
 
   // Chat State (Ephemeral)
   chatHistory: Record<string, ChatMessage[]>; // bookId -> messages
@@ -62,10 +64,12 @@ interface AppState {
   updateModel: (model: AIModel) => void;
   removeModel: (id: string) => void;
   updateModelConfig: (config: Partial<ModelConfig>) => void;
+  updateEditorTypography: (config: Partial<EditorTypographySettings>) => void;
+  resetEditorTypography: () => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
 }
 
-type PersistedState = Pick<AppState, 'models' | 'modelConfig' | 'theme'>;
+type PersistedState = Pick<AppState, 'models' | 'modelConfig' | 'theme' | 'editorTypography'>;
 
 // Default Models
 const defaultModels: AIModel[] = [
@@ -251,6 +255,7 @@ export const useStore = create<AppState>()(
 
       models: defaultModels,
       modelConfig: defaultConfig,
+      editorTypography: DEFAULT_EDITOR_TYPOGRAPHY,
       theme: 'system',
 
       setCurrentBook: (book) => set((state) => {
@@ -360,6 +365,15 @@ export const useStore = create<AppState>()(
       updateModelConfig: (cfg) => set((state) => ({
         modelConfig: { ...state.modelConfig, ...cfg }
       })),
+      updateEditorTypography: (cfg) => set((state) => ({
+        editorTypography: sanitizeEditorTypography({
+          ...state.editorTypography,
+          ...cfg,
+        })
+      })),
+      resetEditorTypography: () => set(() => ({
+        editorTypography: DEFAULT_EDITOR_TYPOGRAPHY
+      })),
       setTheme: (theme) => set({ theme }),
     }),
     {
@@ -371,7 +385,8 @@ export const useStore = create<AppState>()(
       partialize: (state): PersistedState => ({
         models: state.models,
         modelConfig: state.modelConfig,
-        theme: state.theme
+        theme: state.theme,
+        editorTypography: state.editorTypography
       }), // Only persist settings
     }
   )

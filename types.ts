@@ -90,6 +90,15 @@ export interface ModelConfig {
   enableCreativitySeeds: boolean;
 }
 
+export interface EditorTypographySettings {
+  fontFamily: string;
+  fontSize: number;
+  lineHeight: number;
+  letterSpacing: number;
+  contentWidth: number;
+  paragraphSpacing: number;
+}
+
 export interface ExportData {
   version: number;
   book: Book;
