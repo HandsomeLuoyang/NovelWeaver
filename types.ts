@@ -111,6 +111,32 @@ export interface StructureSnapshot {
   nodes: StoryNode[];
 }
 
+export interface DeletedBookEntry {
+  id: string;
+  deletedAt: number;
+  title: string;
+  data: {
+    book: Book;
+    nodes: StoryNode[];
+    history: HistoryEntry[];
+    snapshots: StructureSnapshot[];
+  };
+}
+
+export interface DeletedNodeEntry {
+  id: string;
+  bookId: string;
+  rootNodeId: string;
+  rootNodeTitle: string;
+  rootParentId: string | null;
+  deletedAt: number;
+  data: {
+    nodes: StoryNode[];
+    history: HistoryEntry[];
+    snapshots: StructureSnapshot[];
+  };
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';

@@ -1,11 +1,21 @@
 import Dexie, { Table } from 'dexie';
-import { Book, StoryNode, HistoryEntry, StructureSnapshot, HistoryAction } from './types';
+import {
+  Book,
+  StoryNode,
+  HistoryEntry,
+  StructureSnapshot,
+  HistoryAction,
+  DeletedBookEntry,
+  DeletedNodeEntry
+} from './types';
 
 class NovelWeaverDatabase extends Dexie {
   books!: Table<Book>;
   nodes!: Table<StoryNode>;
   history!: Table<HistoryEntry, number>;
   snapshots!: Table<StructureSnapshot>;
+  deletedBooks!: Table<DeletedBookEntry>;
+  deletedNodes!: Table<DeletedNodeEntry>;
 
   constructor() {
     super('NovelWeaverDB');
@@ -15,19 +25,65 @@ class NovelWeaverDatabase extends Dexie {
       history: '++id, nodeId, timestamp, action',
       snapshots: 'id, parentId, bookId, createdAt'
     });
+    this.version(7).stores({
+      books: 'id, title, createdAt',
+      nodes: 'id, bookId, parentId, type, order, [bookId+parentId]',
+      history: '++id, nodeId, timestamp, action',
+      snapshots: 'id, parentId, bookId, createdAt',
+      deletedBooks: 'id, deletedAt, title',
+      deletedNodes: 'id, bookId, rootNodeId, deletedAt'
+    });
   }
 }
 
 
 export const db = new NovelWeaverDatabase();
 
-// Helper to delete a node and all its descendants recursively
-export const deleteNodeRecursive = async (nodeId: string) => {
-  const children = await db.nodes.where('parentId').equals(nodeId).toArray();
-  for (const child of children) {
-    await deleteNodeRecursive(child.id);
+const collectSubtreeNodeIds = async (nodeId: string): Promise<string[]> => {
+  const rootNode = await db.nodes.get(nodeId);
+  if (!rootNode) return [];
+
+  const allBookNodes = await db.nodes.where('bookId').equals(rootNode.bookId).toArray();
+  const childrenByParent = new Map<string, StoryNode[]>();
+
+  allBookNodes.forEach((node) => {
+    if (!node.parentId) return;
+    const bucket = childrenByParent.get(node.parentId) || [];
+    bucket.push(node);
+    childrenByParent.set(node.parentId, bucket);
+  });
+
+  const result: string[] = [];
+  const stack: string[] = [nodeId];
+
+  while (stack.length > 0) {
+    const currentId = stack.pop()!;
+    result.push(currentId);
+    const children = childrenByParent.get(currentId) || [];
+    children.forEach((child) => stack.push(child.id));
   }
-  await db.nodes.delete(nodeId);
+
+  return result;
+};
+
+// Hard delete node subtree and related history/snapshots.
+export const deleteNodeRecursive = async (nodeId: string) => {
+  const nodeIds = await collectSubtreeNodeIds(nodeId);
+  if (nodeIds.length === 0) return;
+
+  await db.transaction('rw', db.nodes, db.history, db.snapshots, async () => {
+    await db.history.where('nodeId').anyOf(nodeIds).delete();
+
+    const snapshots = await db.snapshots.toArray();
+    const snapshotIdsToDelete = snapshots
+      .filter((snap) => nodeIds.includes(snap.parentId))
+      .map((snap) => snap.id);
+    if (snapshotIdsToDelete.length > 0) {
+      await db.snapshots.bulkDelete(snapshotIdsToDelete);
+    }
+
+    await db.nodes.bulkDelete(nodeIds);
+  });
 };
 
 // Helper to get full tree for a book (be careful with large books, prefer lazy load in UI)
@@ -123,6 +179,251 @@ export const updateBookWordCount = async (bookId: string) => {
 
   await db.books.update(bookId, { wordCount: totalWords });
   return totalWords;
+};
+
+const remapSnapshotNodes = (
+  nodes: StoryNode[],
+  nodeIdMap: Map<string, string>,
+  bookId: string
+) => {
+  return nodes.map((node) => ({
+    ...node,
+    id: nodeIdMap.get(node.id) || node.id,
+    bookId,
+    parentId: node.parentId ? (nodeIdMap.get(node.parentId) || node.parentId) : null
+  }));
+};
+
+export const getDeletedBooks = async () => {
+  return db.deletedBooks.orderBy('deletedAt').reverse().toArray();
+};
+
+export const permanentlyDeleteBookFromRecycleBin = async (entryId: string) => {
+  await db.deletedBooks.delete(entryId);
+};
+
+export const moveBookToRecycleBin = async (bookId: string) => {
+  const book = await db.books.get(bookId);
+  if (!book) throw new Error('书籍不存在');
+
+  const nodes = await db.nodes.where('bookId').equals(bookId).toArray();
+  const nodeIds = nodes.map((node) => node.id);
+  const history = nodeIds.length > 0
+    ? await db.history.where('nodeId').anyOf(nodeIds).toArray()
+    : [];
+  const snapshots = await db.snapshots.where('bookId').equals(bookId).toArray();
+
+  const recycleEntry: DeletedBookEntry = {
+    id: crypto.randomUUID(),
+    deletedAt: Date.now(),
+    title: book.title,
+    data: {
+      book,
+      nodes,
+      history,
+      snapshots
+    }
+  };
+
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks], async () => {
+    await db.deletedBooks.add(recycleEntry);
+    if (nodeIds.length > 0) {
+      await db.history.where('nodeId').anyOf(nodeIds).delete();
+    }
+    await db.snapshots.where('bookId').equals(bookId).delete();
+    await db.nodes.where('bookId').equals(bookId).delete();
+    await db.books.delete(bookId);
+  });
+
+  return recycleEntry.id;
+};
+
+export const restoreBookFromRecycleBin = async (entryId: string) => {
+  const recycleEntry = await db.deletedBooks.get(entryId);
+  if (!recycleEntry) throw new Error('回收站记录不存在');
+
+  const sourceBook = recycleEntry.data.book;
+  const existingBook = await db.books.get(sourceBook.id);
+  const restoredBookId = existingBook ? crypto.randomUUID() : sourceBook.id;
+  const sourceNodeIds = recycleEntry.data.nodes.map((node) => node.id);
+  const existingNodes = sourceNodeIds.length > 0 ? await db.nodes.bulkGet(sourceNodeIds) : [];
+  const hasNodeIdCollision = existingNodes.some(Boolean);
+
+  const nodeIdMap = new Map<string, string>();
+  sourceNodeIds.forEach((sourceNodeId) => {
+    nodeIdMap.set(sourceNodeId, hasNodeIdCollision ? crypto.randomUUID() : sourceNodeId);
+  });
+
+  const restoredBook: Book = {
+    ...sourceBook,
+    id: restoredBookId
+  };
+
+  const restoredNodes = recycleEntry.data.nodes.map((node) => ({
+    ...node,
+    id: nodeIdMap.get(node.id) || node.id,
+    bookId: restoredBookId,
+    parentId: node.parentId ? (nodeIdMap.get(node.parentId) || node.parentId) : null
+  }));
+  const restoredNodeIds = new Set(restoredNodes.map((node) => node.id));
+
+  const restoredHistory = recycleEntry.data.history.map((entry) => ({
+    ...entry,
+    id: undefined,
+    nodeId: nodeIdMap.get(entry.nodeId) || entry.nodeId
+  }));
+
+  const restoredSnapshots = recycleEntry.data.snapshots
+    .map((snapshot) => ({
+      ...snapshot,
+      id: crypto.randomUUID(),
+      bookId: restoredBookId,
+      parentId: nodeIdMap.get(snapshot.parentId) || snapshot.parentId,
+      nodes: remapSnapshotNodes(snapshot.nodes, nodeIdMap, restoredBookId)
+    }))
+    .filter((snapshot) => restoredNodeIds.has(snapshot.parentId));
+
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks], async () => {
+    await db.books.put(restoredBook);
+    if (restoredNodes.length > 0) {
+      await db.nodes.bulkPut(restoredNodes);
+    }
+    if (restoredHistory.length > 0) {
+      await db.history.bulkAdd(restoredHistory);
+    }
+    if (restoredSnapshots.length > 0) {
+      await db.snapshots.bulkPut(restoredSnapshots);
+    }
+    await db.deletedBooks.delete(entryId);
+  });
+
+  await updateBookWordCount(restoredBookId);
+  return restoredBook;
+};
+
+export const getDeletedNodesForBook = async (bookId: string) => {
+  const entries = await db.deletedNodes.where('bookId').equals(bookId).sortBy('deletedAt');
+  return entries.reverse();
+};
+
+export const permanentlyDeleteNodeFromRecycleBin = async (entryId: string) => {
+  await db.deletedNodes.delete(entryId);
+};
+
+export const moveNodeToRecycleBin = async (nodeId: string) => {
+  const rootNode = await db.nodes.get(nodeId);
+  if (!rootNode) throw new Error('节点不存在');
+
+  const nodeIds = await collectSubtreeNodeIds(nodeId);
+  const nodeList = await db.nodes.bulkGet(nodeIds);
+  const nodes = nodeList.filter((node): node is StoryNode => Boolean(node));
+
+  const history = nodeIds.length > 0
+    ? await db.history.where('nodeId').anyOf(nodeIds).toArray()
+    : [];
+
+  const snapshots = await db.snapshots.toArray();
+  const relatedSnapshots = snapshots.filter((snapshot) => nodeIds.includes(snapshot.parentId));
+  const relatedSnapshotIds = relatedSnapshots.map((snapshot) => snapshot.id);
+
+  const recycleEntry: DeletedNodeEntry = {
+    id: crypto.randomUUID(),
+    bookId: rootNode.bookId,
+    rootNodeId: rootNode.id,
+    rootNodeTitle: rootNode.title,
+    rootParentId: rootNode.parentId,
+    deletedAt: Date.now(),
+    data: {
+      nodes,
+      history,
+      snapshots: relatedSnapshots
+    }
+  };
+
+  await db.transaction('rw', [db.nodes, db.history, db.snapshots, db.deletedNodes], async () => {
+    await db.deletedNodes.add(recycleEntry);
+    if (nodeIds.length > 0) {
+      await db.history.where('nodeId').anyOf(nodeIds).delete();
+      await db.nodes.bulkDelete(nodeIds);
+    }
+    if (relatedSnapshotIds.length > 0) {
+      await db.snapshots.bulkDelete(relatedSnapshotIds);
+    }
+  });
+
+  await updateBookWordCount(rootNode.bookId);
+  return recycleEntry.id;
+};
+
+export const restoreNodeFromRecycleBin = async (entryId: string) => {
+  const recycleEntry = await db.deletedNodes.get(entryId);
+  if (!recycleEntry) throw new Error('回收站记录不存在');
+
+  const existingBook = await db.books.get(recycleEntry.bookId);
+  if (!existingBook) throw new Error('所属书籍不存在，无法恢复节点');
+
+  const sourceNodeIds = recycleEntry.data.nodes.map((node) => node.id);
+  const existingNodes = sourceNodeIds.length > 0 ? await db.nodes.bulkGet(sourceNodeIds) : [];
+  const hasNodeIdCollision = existingNodes.some(Boolean);
+
+  const nodeIdMap = new Map<string, string>();
+  sourceNodeIds.forEach((sourceNodeId) => {
+    nodeIdMap.set(sourceNodeId, hasNodeIdCollision ? crypto.randomUUID() : sourceNodeId);
+  });
+
+  const existingParent = recycleEntry.rootParentId
+    ? await db.nodes.get(recycleEntry.rootParentId)
+    : null;
+  const restoredRootParentId = recycleEntry.rootParentId && !existingParent
+    ? null
+    : recycleEntry.rootParentId;
+
+  const restoredRootNodeId = nodeIdMap.get(recycleEntry.rootNodeId) || recycleEntry.rootNodeId;
+
+  const restoredNodes = recycleEntry.data.nodes.map((node) => {
+    const mappedNodeId = nodeIdMap.get(node.id) || node.id;
+    const mappedParentId = node.parentId ? (nodeIdMap.get(node.parentId) || node.parentId) : null;
+
+    return {
+      ...node,
+      id: mappedNodeId,
+      bookId: recycleEntry.bookId,
+      parentId: node.id === recycleEntry.rootNodeId ? restoredRootParentId : mappedParentId
+    };
+  });
+  const restoredNodeIds = new Set(restoredNodes.map((node) => node.id));
+
+  const restoredHistory = recycleEntry.data.history.map((entry) => ({
+    ...entry,
+    id: undefined,
+    nodeId: nodeIdMap.get(entry.nodeId) || entry.nodeId
+  }));
+
+  const restoredSnapshots = recycleEntry.data.snapshots
+    .map((snapshot) => ({
+      ...snapshot,
+      id: crypto.randomUUID(),
+      bookId: recycleEntry.bookId,
+      parentId: nodeIdMap.get(snapshot.parentId) || snapshot.parentId,
+      nodes: remapSnapshotNodes(snapshot.nodes, nodeIdMap, recycleEntry.bookId)
+    }))
+    .filter((snapshot) => restoredNodeIds.has(snapshot.parentId));
+
+  await db.transaction('rw', [db.nodes, db.history, db.snapshots, db.deletedNodes], async () => {
+    if (restoredNodes.length > 0) {
+      await db.nodes.bulkPut(restoredNodes);
+    }
+    if (restoredHistory.length > 0) {
+      await db.history.bulkAdd(restoredHistory);
+    }
+    if (restoredSnapshots.length > 0) {
+      await db.snapshots.bulkPut(restoredSnapshots);
+    }
+    await db.deletedNodes.delete(entryId);
+  });
+
+  await updateBookWordCount(recycleEntry.bookId);
+  return restoredRootNodeId;
 };
 
 /**

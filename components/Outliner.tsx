@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { db, deleteNodeRecursive } from '../db';
+import { db, moveNodeToRecycleBin } from '../db';
 import { StoryNode, NodeType } from '../types';
 import { Icons } from './Icons';
 import { expandNode } from '../services/geminiService';
@@ -10,6 +10,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useToast } from '../hooks/useToast';
 import { NodeCreateModal } from './NodeCreateModal';
 import { StructureVariationModal } from './StructureVariationModal';
+import { NodeRecycleBinModal } from './NodeRecycleBinModal';
 
 // Recursive Node Component
 const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level }) => {
@@ -336,9 +337,9 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
                         <button
                             onClick={async (e) => {
                                 e.stopPropagation();
-                                if (confirm("确定要删除此节点及其所有子节点吗？")) {
-                                    await deleteNodeRecursive(node.id);
-                                    toast.success('节点已删除');
+                                if (confirm("确定删除此节点吗？它会先进入回收站，可稍后恢复。")) {
+                                    await moveNodeToRecycleBin(node.id);
+                                    toast.success('节点已移入回收站');
                                 }
                             }}
                             className="p-1 hover:bg-destructive/10 hover:text-destructive rounded"
@@ -409,6 +410,7 @@ export const Outliner: React.FC = () => {
     const { currentBook, setCurrentBook, setActiveNodeId, expandedNodeIds, toggleNodeExpansion } = useStore();
     const toast = useToast();
     const [isFloatingOutlinerOpen, setIsFloatingOutlinerOpen] = useState(false);
+    const [isNodeRecycleBinOpen, setIsNodeRecycleBinOpen] = useState(false);
     const [outlineSearch, setOutlineSearch] = useState('');
     const [showRootCreateModal, setShowRootCreateModal] = useState(false);
 
@@ -529,6 +531,13 @@ export const Outliner: React.FC = () => {
                             title="新增卷"
                         >
                             <Icons.Plus size={14} />
+                        </button>
+                        <button
+                            onClick={() => setIsNodeRecycleBinOpen(true)}
+                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
+                            title="节点回收站"
+                        >
+                            <Icons.Trash2 size={14} />
                         </button>
                         <button
                             onClick={() => setIsFloatingOutlinerOpen(true)}
@@ -685,6 +694,16 @@ export const Outliner: React.FC = () => {
                 onClose={() => setShowRootCreateModal(false)}
                 onConfirm={handleCreateRootVolume}
                 nodeType="volume"
+            />
+
+            <NodeRecycleBinModal
+                isOpen={isNodeRecycleBinOpen}
+                onClose={() => setIsNodeRecycleBinOpen(false)}
+                bookId={currentBook.id}
+                onRestored={(nodeId) => {
+                    setActiveNodeId(nodeId);
+                    toast.success('已定位到恢复节点');
+                }}
             />
         </>
     );

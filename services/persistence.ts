@@ -1,6 +1,13 @@
 
 import { db } from '../db';
-import { Book, HistoryEntry, StoryNode, StructureSnapshot } from '../types';
+import {
+    Book,
+    HistoryEntry,
+    StoryNode,
+    StructureSnapshot,
+    DeletedBookEntry,
+    DeletedNodeEntry
+} from '../types';
 
 interface ContentBackup {
     version: number;
@@ -8,6 +15,8 @@ interface ContentBackup {
     nodes: StoryNode[];
     history: HistoryEntry[];
     snapshots: StructureSnapshot[];
+    deletedBooks: DeletedBookEntry[];
+    deletedNodes: DeletedNodeEntry[];
 }
 
 const API_Endpoint = '/api/storage/content';
@@ -62,12 +71,14 @@ export const PersistenceService = {
             if (!data) return;
 
             // 3. Import to Dexie
-            await db.transaction('rw', db.books, db.nodes, db.history, db.snapshots, async () => {
+            await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes], async () => {
                 if (force) {
                     await db.books.clear();
                     await db.nodes.clear();
                     await db.history.clear();
                     await db.snapshots.clear();
+                    await db.deletedBooks.clear();
+                    await db.deletedNodes.clear();
                 }
                 if (data.books.length > 0) {
                     await db.books.bulkAdd(data.books);
@@ -80,6 +91,12 @@ export const PersistenceService = {
                 }
                 if (data.snapshots && data.snapshots.length > 0) {
                     await db.snapshots.bulkAdd(data.snapshots);
+                }
+                if (data.deletedBooks && data.deletedBooks.length > 0) {
+                    await db.deletedBooks.bulkAdd(data.deletedBooks);
+                }
+                if (data.deletedNodes && data.deletedNodes.length > 0) {
+                    await db.deletedNodes.bulkAdd(data.deletedNodes);
                 }
             });
             console.log('Content loaded from disk successfully.');
@@ -98,13 +115,17 @@ export const PersistenceService = {
             const nodes = await db.nodes.toArray();
             const history = await db.history.toArray();
             const snapshots = await db.snapshots.toArray();
+            const deletedBooks = await db.deletedBooks.toArray();
+            const deletedNodes = await db.deletedNodes.toArray();
 
             const payload: ContentBackup = {
                 version: 1,
                 books,
                 nodes,
                 history,
-                snapshots
+                snapshots,
+                deletedBooks,
+                deletedNodes
             };
 
             if (typeof window !== 'undefined') {

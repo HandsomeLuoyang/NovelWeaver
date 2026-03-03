@@ -50,6 +50,12 @@ const App: React.FC = () => {
     const snapshotsCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
     const snapshotsUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
     const snapshotsDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const deletedBooksCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const deletedBooksUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const deletedBooksDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const deletedNodesCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const deletedNodesUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const deletedNodesDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
 
     // Keep disk as source-of-truth by hydrating from disk snapshot first.
     const initPersistence = async () => {
@@ -72,6 +78,12 @@ const App: React.FC = () => {
     db.snapshots.hook('creating', snapshotsCreatingHook);
     db.snapshots.hook('updating', snapshotsUpdatingHook);
     db.snapshots.hook('deleting', snapshotsDeletingHook);
+    db.deletedBooks.hook('creating', deletedBooksCreatingHook);
+    db.deletedBooks.hook('updating', deletedBooksUpdatingHook);
+    db.deletedBooks.hook('deleting', deletedBooksDeletingHook);
+    db.deletedNodes.hook('creating', deletedNodesCreatingHook);
+    db.deletedNodes.hook('updating', deletedNodesUpdatingHook);
+    db.deletedNodes.hook('deleting', deletedNodesDeletingHook);
 
     // Auto-save every 30 seconds
     const interval = window.setInterval(() => {
@@ -106,6 +118,12 @@ const App: React.FC = () => {
       db.snapshots.hook('creating').unsubscribe(snapshotsCreatingHook);
       db.snapshots.hook('updating').unsubscribe(snapshotsUpdatingHook);
       db.snapshots.hook('deleting').unsubscribe(snapshotsDeletingHook);
+      db.deletedBooks.hook('creating').unsubscribe(deletedBooksCreatingHook);
+      db.deletedBooks.hook('updating').unsubscribe(deletedBooksUpdatingHook);
+      db.deletedBooks.hook('deleting').unsubscribe(deletedBooksDeletingHook);
+      db.deletedNodes.hook('creating').unsubscribe(deletedNodesCreatingHook);
+      db.deletedNodes.hook('updating').unsubscribe(deletedNodesUpdatingHook);
+      db.deletedNodes.hook('deleting').unsubscribe(deletedNodesDeletingHook);
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);

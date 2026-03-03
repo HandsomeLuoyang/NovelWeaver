@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { db, getBookNodes } from '../db';
+import { db, getBookNodes, moveBookToRecycleBin } from '../db';
 import { useStore } from '../store';
 import { Book, StoryNode, ExportData, HistoryEntry } from '../types';
 import { genesis } from '../services/geminiService';
@@ -13,6 +13,7 @@ import { BookCard } from './BookCard';
 import { SearchBar } from './SearchBar';
 import { useToast } from '../hooks/useToast';
 import { ManualBookModal, ManualBookPayload } from './ManualBookModal';
+import { BookRecycleBinModal } from './BookRecycleBinModal';
 
 const GENESIS_PROMPT_MAX_CHARS = 20000;
 
@@ -23,17 +24,19 @@ export const Library: React.FC = () => {
     const { setCurrentBook, setGenerating, isGenerating, generationStatus } = useStore();
     const [showModelSettings, setShowModelSettings] = useState(false);
     const [showManualCreate, setShowManualCreate] = useState(false);
+    const [showRecycleBin, setShowRecycleBin] = useState(false);
     const [isCreatingManual, setIsCreatingManual] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const toast = useToast();
 
+    const loadBooks = async () => {
+        const allBooks = await db.books.orderBy('createdAt').reverse().toArray();
+        setBooks(allBooks);
+        setFilteredBooks(allBooks);
+    };
+
     useEffect(() => {
-        const loadBooks = async () => {
-            const allBooks = await db.books.orderBy('createdAt').reverse().toArray();
-            setBooks(allBooks);
-            setFilteredBooks(allBooks);
-        };
-        loadBooks();
+        void loadBooks();
     }, [isGenerating]);
 
     const handleGenesis = async () => {
@@ -143,18 +146,10 @@ export const Library: React.FC = () => {
 
     const deleteBook = async (e: React.MouseEvent, bookId: string) => {
         e.stopPropagation();
-        if (confirm('确定要销毁这本书及其所有内容吗？此操作不可恢复。')) {
-            const nodeIds = (await db.nodes.where({ bookId }).toArray()).map(n => n.id);
-
-            await db.transaction('rw', db.books, db.nodes, db.history, async () => {
-                if (nodeIds.length > 0) {
-                    await db.history.where('nodeId').anyOf(nodeIds).delete();
-                }
-                await db.nodes.where({ bookId }).delete();
-                await db.books.delete(bookId);
-            });
-            setBooks(books.filter(b => b.id !== bookId));
-            toast.success('书籍已删除');
+        if (confirm('确定删除这本书吗？它会先进入回收站，可稍后恢复。')) {
+            await moveBookToRecycleBin(bookId);
+            await loadBooks();
+            toast.success('书籍已移入回收站');
         }
     };
 
@@ -270,6 +265,15 @@ export const Library: React.FC = () => {
     return (
         <div className="w-full min-h-screen bg-background text-foreground flex flex-col relative overflow-y-auto transition-colors duration-500">
             <ModelSettingsModal isOpen={showModelSettings} onClose={() => setShowModelSettings(false)} />
+            <BookRecycleBinModal
+                isOpen={showRecycleBin}
+                onClose={() => setShowRecycleBin(false)}
+                onRestored={(book) => {
+                    setBooks((prev) => [book, ...prev.filter((item) => item.id !== book.id)]);
+                    setFilteredBooks((prev) => [book, ...prev.filter((item) => item.id !== book.id)]);
+                    setCurrentBook(book);
+                }}
+            />
             <ManualBookModal
                 isOpen={showManualCreate}
                 isSubmitting={isCreatingManual}
@@ -331,6 +335,12 @@ export const Library: React.FC = () => {
                             className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                         >
                             导入
+                        </button>
+                        <button
+                            onClick={() => setShowRecycleBin(true)}
+                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            回收站
                         </button>
                         <button
                             onClick={() => setShowModelSettings(true)}
