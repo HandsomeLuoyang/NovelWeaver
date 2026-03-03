@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useStore } from '../store';
@@ -399,70 +399,66 @@ export const Editor: React.FC = () => {
         }
     };
 
-    const paletteCommands: PaletteCommand[] = useMemo(() => {
-        const commands: PaletteCommand[] = [
-            {
-                id: 'save-node',
-                title: '保存当前节点',
-                hint: 'Ctrl/Cmd + S',
-                run: () => { void handleManualSave('manual'); }
-            },
-            {
-                id: 'open-task-queue',
-                title: '打开任务队列',
-                run: () => setIsTaskQueueOpen(true)
-            },
-            {
-                id: 'open-consistency',
-                title: '打开一致性检查',
-                run: () => setIsConsistencyOpen(true)
-            },
-            {
-                id: 'open-publish-workflow',
-                title: '打开发布工作流',
-                run: () => setIsPublishWorkflowOpen(true)
-            },
-            {
-                id: 'open-model-settings',
-                title: '打开模型设置',
-                run: () => setIsModelSettingsOpen(true)
-            },
-            {
-                id: 'open-plugin-center',
-                title: '打开插件中心',
-                run: () => setIsPluginCenterOpen(true)
-            },
-            {
-                id: 'toggle-zen',
-                title: isZenMode ? '退出禅模式' : '进入禅模式',
-                hint: '专注写作视图',
-                run: () => toggleZenMode()
-            },
-            {
-                id: 'view-edit',
-                title: '切换到编辑视图',
-                hint: 'Alt + 1',
-                run: () => setViewMode('edit')
-            },
-            {
-                id: 'view-preview',
-                title: '切换到预览视图',
-                hint: 'Alt + 2',
-                run: () => setViewMode('preview')
-            },
-        ];
+    const paletteCommands: PaletteCommand[] = [
+        {
+            id: 'save-node',
+            title: '保存当前节点',
+            hint: 'Ctrl/Cmd + S',
+            run: () => { void handleManualSave('manual'); }
+        },
+        {
+            id: 'open-task-queue',
+            title: '打开任务队列',
+            run: () => setIsTaskQueueOpen(true)
+        },
+        {
+            id: 'open-consistency',
+            title: '打开一致性检查',
+            run: () => setIsConsistencyOpen(true)
+        },
+        {
+            id: 'open-publish-workflow',
+            title: '打开发布工作流',
+            run: () => setIsPublishWorkflowOpen(true)
+        },
+        {
+            id: 'open-model-settings',
+            title: '打开模型设置',
+            run: () => setIsModelSettingsOpen(true)
+        },
+        {
+            id: 'open-plugin-center',
+            title: '打开插件中心',
+            run: () => setIsPluginCenterOpen(true)
+        },
+        {
+            id: 'toggle-zen',
+            title: isZenMode ? '退出禅模式' : '进入禅模式',
+            hint: '专注写作视图',
+            run: () => toggleZenMode()
+        },
+        {
+            id: 'view-edit',
+            title: '切换到编辑视图',
+            hint: 'Alt + 1',
+            run: () => setViewMode('edit')
+        },
+        {
+            id: 'view-preview',
+            title: '切换到预览视图',
+            hint: 'Alt + 2',
+            run: () => setViewMode('preview')
+        },
+    ];
 
-        if (history.length > 0) {
-            commands.push({
-                id: 'view-diff',
-                title: '切换到对比视图',
-                hint: 'Alt + 3',
-                run: () => setViewMode('diff')
-            });
-        }
-
-        return commands;
-    }, [handleManualSave, history.length, isZenMode, toggleZenMode]);
+    if (history.length > 0) {
+        paletteCommands.push({
+            id: 'view-diff',
+            title: '切换到对比视图',
+            hint: 'Alt + 3',
+            run: () => setViewMode('diff')
+        });
+    }
 
     const renderFloatingContextContent = () => {
         if (!floatingContextPanel) return null;
