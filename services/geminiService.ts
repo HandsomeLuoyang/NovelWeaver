@@ -130,6 +130,40 @@ const updateStatus = (status: string) => {
   useStore.getState().setGenerationStatus(status);
 };
 
+const estimatePricePer1kTokens = (provider: 'google' | 'openai', modelName: string) => {
+  const normalizedModel = modelName.toLowerCase();
+  if (provider === 'google') {
+    if (normalizedModel.includes('pro')) return 0.005;
+    return 0.001;
+  }
+  if (normalizedModel.includes('gpt-4') || normalizedModel.includes('o1') || normalizedModel.includes('o3')) {
+    return 0.01;
+  }
+  return 0.002;
+};
+
+const recordUsage = (
+  taskType: TaskType,
+  config: TaskRuntimeConfig,
+  inputText: string,
+  outputText: string
+) => {
+  const estimatedTokens = Math.ceil((inputText.length + outputText.length) / 4);
+  const estimatedCostUSD = Number(((estimatedTokens / 1000) * estimatePricePer1kTokens(config.provider, config.modelName)).toFixed(6));
+
+  useStore.getState().addUsageEntry({
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    timestamp: Date.now(),
+    taskType,
+    provider: config.provider,
+    modelName: config.modelName,
+    inputChars: inputText.length,
+    outputChars: outputText.length,
+    estimatedTokens,
+    estimatedCostUSD,
+  });
+};
+
 const getNodeTypeName = (type: string) => {
   switch (type) {
     case 'volume': return '卷';
@@ -331,6 +365,7 @@ export const genesis = async (userPrompt: string, signal?: AbortSignal): Promise
     } as any);
     const text = response.text;
     if (!text) throw new Error("AI 未返回数据");
+    recordUsage('genesis', config, `${systemPrompt}\n${userContent}`, text);
     return GenesisResponseSchema.parse(JSON.parse(text));
   } else {
     // OpenAI Logic
@@ -344,6 +379,7 @@ export const genesis = async (userPrompt: string, signal?: AbortSignal): Promise
     // but we'll try to use it if we can, or just rely on prompt.
     // Safe bet: standard prompt + cleanup.
     const text = await callOpenAI(config, messages, false, signal);
+    recordUsage('genesis', config, messages.map((msg) => msg.content).join('\n\n'), text);
 
     const cleanText = text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
     try {
@@ -427,6 +463,7 @@ export const expandNode = async (
 
     const text = response.text;
     if (!text) throw new Error("AI 未返回数据");
+    recordUsage('expansion', config, prompt, text);
     return ExpansionResponseSchema.parse(JSON.parse(text));
   } else {
     // OpenAI Logic
@@ -437,6 +474,7 @@ export const expandNode = async (
     ];
 
     const text = await callOpenAI(config, messages, false, signal);
+    recordUsage('expansion', config, messages.map((msg) => msg.content).join('\n\n'), text);
     const cleanText = text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
     try {
       return ExpansionResponseSchema.parse(JSON.parse(cleanText));
@@ -526,6 +564,7 @@ export const draftScene = async (
         onStream(text);
       }
     }
+    recordUsage('drafting', config, prompt, fullText);
     updateStatus("写作完成");
     return fullText;
   } else {
@@ -541,6 +580,7 @@ export const draftScene = async (
       fullText += chunk;
       onStream(chunk);
     }
+    recordUsage('drafting', config, messages.map((msg) => msg.content).join('\n\n'), fullText);
     updateStatus("写作完成");
     return fullText;
   }
@@ -607,6 +647,7 @@ export const polishText = async (
         onStream(text);
       }
     }
+    recordUsage('polishing', config, prompt, fullText);
     updateStatus("润色完成");
     return fullText;
   } else {
@@ -622,6 +663,7 @@ export const polishText = async (
       fullText += chunk;
       onStream(chunk);
     }
+    recordUsage('polishing', config, messages.map((msg) => msg.content).join('\n\n'), fullText);
     updateStatus("润色完成");
     return fullText;
   }
@@ -692,6 +734,7 @@ ${dialogue}
         onStream(text);
       }
     }
+    recordUsage('chat', config, prompt, fullText);
     return fullText;
 
   } else {
@@ -706,6 +749,7 @@ ${dialogue}
       fullText += chunk;
       onStream(chunk);
     }
+    recordUsage('chat', config, messages.map((msg) => msg.content).join('\n\n'), fullText);
     return fullText;
   }
 };

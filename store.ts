@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, PersistStorage } from 'zustand/middleware';
-import { Book, AIModel, ModelConfig, ChatMessage, AITask, AITaskStatus, AITaskType } from './types';
+import { Book, AIModel, ModelConfig, ChatMessage, AITask, AITaskStatus, AITaskType, AIUsageEntry } from './types';
 import type { Toast } from './hooks/useToast';
 
 interface AppState {
@@ -28,6 +28,7 @@ interface AppState {
   isTaskQueuePaused: boolean;
   isTaskQueueRunning: boolean;
   taskQueueConcurrency: number;
+  usageLog: AIUsageEntry[];
 
   // Actions
   setCurrentBook: (book: Book | null) => void;
@@ -49,6 +50,8 @@ interface AppState {
   setTaskQueuePaused: (paused: boolean) => void;
   setTaskQueueRunning: (running: boolean) => void;
   setTaskQueueConcurrency: (concurrency: number) => void;
+  addUsageEntry: (entry: AIUsageEntry) => void;
+  clearUsageLog: () => void;
 
   // Toast Actions
   addToast: (toast: Toast) => void;
@@ -100,6 +103,7 @@ const defaultConfig: ModelConfig = {
 
 const SETTINGS_ENDPOINT = '/api/storage/models';
 const TASK_QUEUE_STORAGE_KEY = 'novelweaver-task-queue';
+const AI_USAGE_STORAGE_KEY = 'novelweaver-ai-usage-log';
 
 const readFromLocalStorage = (name: string) => {
   if (typeof window === 'undefined') return null;
@@ -206,6 +210,28 @@ const persistTaskQueueSnapshot = (
 
 const restoredTaskQueueState = readTaskQueueSnapshot();
 
+const readUsageLog = () => {
+  if (typeof window === 'undefined') return [] as AIUsageEntry[];
+
+  const raw = window.localStorage.getItem(AI_USAGE_STORAGE_KEY);
+  if (!raw) return [] as AIUsageEntry[];
+
+  try {
+    const parsed = JSON.parse(raw) as AIUsageEntry[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed to parse usage log cache:', error);
+    return [] as AIUsageEntry[];
+  }
+};
+
+const persistUsageLog = (usageLog: AIUsageEntry[]) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(AI_USAGE_STORAGE_KEY, JSON.stringify(usageLog.slice(0, 500)));
+};
+
+const restoredUsageLog = readUsageLog();
+
 export const useStore = create<AppState>()(
   persist<AppState, [], [], PersistedState>(
     (set) => ({
@@ -220,6 +246,7 @@ export const useStore = create<AppState>()(
       isTaskQueuePaused: restoredTaskQueueState?.isTaskQueuePaused || false,
       isTaskQueueRunning: false,
       taskQueueConcurrency: restoredTaskQueueState?.taskQueueConcurrency || 1,
+      usageLog: restoredUsageLog,
       toasts: [],
 
       models: defaultModels,
@@ -309,6 +336,15 @@ export const useStore = create<AppState>()(
         const safeConcurrency = Math.min(3, Math.max(1, Math.round(concurrency)));
         persistTaskQueueSnapshot(state.taskQueue, state.isTaskQueuePaused, safeConcurrency);
         return { taskQueueConcurrency: safeConcurrency };
+      }),
+      addUsageEntry: (entry) => set((state) => {
+        const nextLog = [entry, ...state.usageLog].slice(0, 500);
+        persistUsageLog(nextLog);
+        return { usageLog: nextLog };
+      }),
+      clearUsageLog: () => set(() => {
+        persistUsageLog([]);
+        return { usageLog: [] };
       }),
 
       addToast: (toast) => set((state) => ({ toasts: [...state.toasts, toast] })),

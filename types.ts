@@ -174,3 +174,15 @@ export interface AITask {
   updatedAt: number;
   error?: string;
 }
+
+export interface AIUsageEntry {
+  id: string;
+  timestamp: number;
+  taskType: 'genesis' | 'expansion' | 'drafting' | 'polishing' | 'chat';
+  provider: 'google' | 'openai';
+  modelName: string;
+  inputChars: number;
+  outputChars: number;
+  estimatedTokens: number;
+  estimatedCostUSD: number;
+}

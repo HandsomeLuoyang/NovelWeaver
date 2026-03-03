@@ -17,6 +17,7 @@ import { TaskQueueModal } from './TaskQueueModal';
 import { ConsistencyCheckModal } from './ConsistencyCheckModal';
 import { WritingStats } from './WritingStats';
 import { AIReviewModal } from './AIReviewModal';
+import { AIUsagePanel } from './AIUsagePanel';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
 type AIReviewState = {
@@ -727,6 +728,7 @@ export const Editor: React.FC = () => {
                     ) : sidebarTab === 'stats' ? (
                         <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
                             {currentBook && <WritingStats book={currentBook} />}
+                            <AIUsagePanel />
                         </div>
                     ) : (
                         <>

@@ -16,6 +16,18 @@ const getNodeTypeName = (type: string) => {
   }
 };
 
+const buildSceneMetaLines = (node: StoryNode) => {
+  if (node.type !== 'scene' || !node.meta) return [] as string[];
+  const lines: string[] = [];
+  if (node.meta.pov) lines.push(`POV: ${node.meta.pov}`);
+  if (node.meta.timeTag) lines.push(`时间: ${node.meta.timeTag}`);
+  if (node.meta.location) lines.push(`地点: ${node.meta.location}`);
+  if (node.meta.conflictType) lines.push(`冲突: ${node.meta.conflictType}`);
+  if (node.meta.participants && node.meta.participants.length > 0) lines.push(`角色: ${node.meta.participants.join('、')}`);
+  if (node.meta.tags && node.meta.tags.length > 0) lines.push(`标签: ${node.meta.tags.join('、')}`);
+  return lines;
+};
+
 /**
  * 导出为 Markdown 格式
  */
@@ -55,6 +67,11 @@ export const exportAsMarkdown = async (book: Book): Promise<string> => {
 
       if (node.summary) {
         markdown += `> ${node.summary}\n\n`;
+      }
+
+      const metaLines = buildSceneMetaLines(node);
+      if (metaLines.length > 0) {
+        markdown += `> ${metaLines.join(' | ')}\n\n`;
       }
 
       if (node.content && node.content.trim()) {
@@ -110,6 +127,11 @@ export const exportAsText = async (book: Book): Promise<string> => {
 
       if (node.summary) {
         text += `${indent}  ${node.summary}\n`;
+      }
+
+      const metaLines = buildSceneMetaLines(node);
+      if (metaLines.length > 0) {
+        text += `${indent}  [元数据] ${metaLines.join(' | ')}\n`;
       }
 
       if (node.content && node.content.trim()) {
@@ -325,6 +347,10 @@ export const exportAsHTML = async (book: Book): Promise<string> => {
           if (node.summary) html += `<p><em>（${node.summary}）</em></p>`;
       } else {
           html += `<div class="scene-title">${node.title}</div>`;
+          const metaLines = buildSceneMetaLines(node);
+          if (metaLines.length > 0) {
+            html += `<p><em>${metaLines.join(' | ')}</em></p>`;
+          }
       }
 
       if (node.content) {
