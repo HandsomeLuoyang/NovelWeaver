@@ -97,6 +97,7 @@ const defaultConfig: ModelConfig = {
 };
 
 const SETTINGS_ENDPOINT = '/api/storage/models';
+const TASK_QUEUE_STORAGE_KEY = 'novelweaver-task-queue';
 
 const readFromLocalStorage = (name: string) => {
   if (typeof window === 'undefined') return null;
@@ -150,6 +151,49 @@ const settingsStorage: PersistStorage<PersistedState> = {
   },
 };
 
+const readTaskQueueSnapshot = () => {
+  if (typeof window === 'undefined') return null;
+
+  const raw = window.localStorage.getItem(TASK_QUEUE_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as { taskQueue?: AITask[]; isTaskQueuePaused?: boolean };
+    const queue = Array.isArray(parsed.taskQueue)
+      ? parsed.taskQueue.map((task) => ({
+          ...task,
+          status: task.status === 'running' ? ('pending' as const) : task.status,
+          updatedAt: task.updatedAt || Date.now()
+        }))
+      : [];
+
+    return {
+      taskQueue: queue,
+      isTaskQueuePaused: Boolean(parsed.isTaskQueuePaused)
+    };
+  } catch (error) {
+    console.error('Failed to parse local task queue snapshot:', error);
+    return null;
+  }
+};
+
+const persistTaskQueueSnapshot = (taskQueue: AITask[], isTaskQueuePaused: boolean) => {
+  if (typeof window === 'undefined') return;
+
+  const normalizedQueue = taskQueue.map((task) => ({
+    ...task,
+    status: task.status === 'running' ? ('pending' as const) : task.status
+  }));
+  const payload = {
+    taskQueue: normalizedQueue,
+    isTaskQueuePaused
+  };
+
+  window.localStorage.setItem(TASK_QUEUE_STORAGE_KEY, JSON.stringify(payload));
+};
+
+const restoredTaskQueueState = readTaskQueueSnapshot();
+
 export const useStore = create<AppState>()(
   persist<AppState, [], [], PersistedState>(
     (set) => ({
@@ -160,8 +204,8 @@ export const useStore = create<AppState>()(
       generationStatus: '',
       isZenMode: false,
       chatHistory: {},
-      taskQueue: [],
-      isTaskQueuePaused: false,
+      taskQueue: restoredTaskQueueState?.taskQueue || [],
+      isTaskQueuePaused: restoredTaskQueueState?.isTaskQueuePaused || false,
       isTaskQueueRunning: false,
       toasts: [],
 
@@ -209,33 +253,44 @@ export const useStore = create<AppState>()(
 
       enqueueTask: (task) => set((state) => {
         const now = Date.now();
+        const nextQueue: AITask[] = [
+          ...state.taskQueue,
+          {
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${now}-${Math.random()}`,
+            ...task,
+            status: 'pending' as const,
+            createdAt: now,
+            updatedAt: now
+          }
+        ];
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
         return {
-          taskQueue: [
-            ...state.taskQueue,
-            {
-              id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${now}-${Math.random()}`,
-              ...task,
-              status: 'pending',
-              createdAt: now,
-              updatedAt: now
-            }
-          ]
+          taskQueue: nextQueue
         };
       }),
-      updateTaskStatus: (taskId, status, error) => set((state) => ({
-        taskQueue: state.taskQueue.map((task) =>
+      updateTaskStatus: (taskId, status, error) => set((state) => {
+        const nextQueue = state.taskQueue.map((task) =>
           task.id === taskId
             ? { ...task, status, error, updatedAt: Date.now() }
             : task
-        )
-      })),
-      removeTask: (taskId) => set((state) => ({
-        taskQueue: state.taskQueue.filter((task) => task.id !== taskId)
-      })),
-      clearCompletedTasks: () => set((state) => ({
-        taskQueue: state.taskQueue.filter((task) => task.status !== 'completed' && task.status !== 'cancelled')
-      })),
-      setTaskQueuePaused: (paused) => set({ isTaskQueuePaused: paused }),
+        );
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
+        return { taskQueue: nextQueue };
+      }),
+      removeTask: (taskId) => set((state) => {
+        const nextQueue = state.taskQueue.filter((task) => task.id !== taskId);
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
+        return { taskQueue: nextQueue };
+      }),
+      clearCompletedTasks: () => set((state) => {
+        const nextQueue = state.taskQueue.filter((task) => task.status !== 'completed' && task.status !== 'cancelled');
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
+        return { taskQueue: nextQueue };
+      }),
+      setTaskQueuePaused: (paused) => set((state) => {
+        persistTaskQueueSnapshot(state.taskQueue, paused);
+        return { isTaskQueuePaused: paused };
+      }),
       setTaskQueueRunning: (running) => set({ isTaskQueueRunning: running }),
 
       addToast: (toast) => set((state) => ({ toasts: [...state.toasts, toast] })),
