@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { db } from '../db';
 import { Book } from '../types';
 import { Icons } from './Icons';
 import { evaluatePublishWorkflow, PublishWorkflowReport } from '../services/publishWorkflowService';
+import { useLiveQuery } from 'dexie-react-hooks';
 
 interface PublishWorkflowModalProps {
   isOpen: boolean;
@@ -12,27 +13,20 @@ interface PublishWorkflowModalProps {
 }
 
 export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOpen, onClose, book }) => {
-  const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState<PublishWorkflowReport | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const load = async () => {
-      setLoading(true);
-      try {
-        const nodes = await db.nodes.where('bookId').equals(book.id).toArray();
-        const workflowReport = evaluatePublishWorkflow(book, nodes);
-        setReport(workflowReport);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
-  }, [book, isOpen]);
+  const nodes = useLiveQuery(
+    async () => {
+      if (!isOpen) return [];
+      return db.nodes.where('bookId').equals(book.id).toArray();
+    },
+    [book.id, isOpen]
+  );
+  const report: PublishWorkflowReport | null = useMemo(() => {
+    if (!nodes) return null;
+    return evaluatePublishWorkflow(book, nodes);
+  }, [book, nodes]);
 
   if (!isOpen) return null;
+  const loading = !nodes;
 
   return createPortal(
     <div className="fixed inset-0 z-[118] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
