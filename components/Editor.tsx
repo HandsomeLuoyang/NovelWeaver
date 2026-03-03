@@ -1,0 +1,798 @@
+import React, { useEffect, useState, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { useStore } from '../store';
+import { db, getLinearContext, getAncestors, saveHistory, getHistory } from '../db';
+import { StoryNode, HistoryEntry } from '../types';
+import { Icons } from './Icons';
+import { useAIWriter } from '../hooks/useAIWriter';
+import { BookSettingsModal } from './BookSettingsModal';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { DiffViewer } from './DiffViewer';
+import { useToast } from '../hooks/useToast';
+import { ChatPanel } from './ChatPanel';
+import { DraftSettingsModal } from './DraftSettingsModal';
+import { ModelSettingsModal } from './ModelSettingsModal';
+import { TaskQueueModal } from './TaskQueueModal';
+import { ConsistencyCheckModal } from './ConsistencyCheckModal';
+import { WritingStats } from './WritingStats';
+
+type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
+
+export const Editor: React.FC = () => {
+    const { activeNodeId, currentBook, setCurrentBook, isGenerating: isGlobalGenerating, isZenMode, toggleZenMode } = useStore();
+    const { isGenerating, stopGeneration, handleAIDraft: aiDraft, handleAIPolish: aiPolish } = useAIWriter();
+    const toast = useToast();
+
+    const [node, setNode] = useState<StoryNode | null>(null);
+    const [content, setContent] = useState('');
+    const [parentNode, setParentNode] = useState<StoryNode | undefined>(undefined);
+    const [isLoading, setIsLoading] = useState(false);
+    const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'diff'>('edit');
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isDraftSettingsOpen, setIsDraftSettingsOpen] = useState(false);
+    const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
+    const [isTaskQueueOpen, setIsTaskQueueOpen] = useState(false);
+    const [isConsistencyOpen, setIsConsistencyOpen] = useState(false);
+    const [floatingContextPanel, setFloatingContextPanel] = useState<FloatingContextPanel>(null);
+
+    // Sidebar Tab State
+    const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
+
+    // History State
+    const [history, setHistory] = useState<HistoryEntry[]>([]);
+    const [historyIndex, setHistoryIndex] = useState(-1);
+
+    // Selection State
+    const [selectionRange, setSelectionRange] = useState<{ start: number, end: number } | null>(null);
+    const [selectedText, setSelectedText] = useState('');
+
+    const editorRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        const loadNode = async () => {
+            if (!activeNodeId) {
+                setNode(null);
+                return;
+            }
+            setIsLoading(true);
+            try {
+                const n = await db.nodes.get(activeNodeId);
+                if (n) {
+                    setNode(n);
+                    setContent(n.content || '');
+
+                    // Load History
+                    const h = await getHistory(activeNodeId);
+                    setHistory(h);
+                    setHistoryIndex(h.length - 1);
+
+                    if (n.parentId) {
+                        const p = await db.nodes.get(n.parentId);
+                        setParentNode(p);
+                    } else {
+                        setParentNode(undefined);
+                    }
+                }
+            } catch (e) {
+                console.error("Error loading node:", e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        loadNode();
+        setViewMode('edit');
+        setSelectionRange(null);
+        setFloatingContextPanel(null);
+    }, [activeNodeId]);
+
+    useEffect(() => {
+        if (!floatingContextPanel) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                setFloatingContextPanel(null);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [floatingContextPanel]);
+
+    const handleManualSave = async (action: 'manual' | 'restore' = 'manual') => {
+        if (node && content !== node.content) {
+            await db.nodes.update(node.id, { content, status: content.length > 100 ? 'drafted' : 'outlined' });
+            await saveHistory(node.id, content, action);
+
+            // Update book word count
+            if (currentBook) {
+                await import('../db').then(mod => mod.updateBookWordCount(currentBook.id));
+            }
+
+            const h = await getHistory(node.id);
+            setHistory(h);
+            setHistoryIndex(h.length - 1);
+        }
+    };
+
+    const handleUndo = () => {
+        if (historyIndex > 0) {
+            const newIndex = historyIndex - 1;
+            setHistoryIndex(newIndex);
+            setContent(history[newIndex].content);
+        }
+    };
+
+    const handleRedo = () => {
+        if (historyIndex < history.length - 1) {
+            const newIndex = historyIndex + 1;
+            setHistoryIndex(newIndex);
+            setContent(history[newIndex].content);
+        }
+    };
+
+    // No changes needed here, keeping auto-save logic but it might conflict with manual history. 
+    // Let's optimize: only save to history on "save" or after a delay.
+    useEffect(() => {
+        const timer = setTimeout(() => handleManualSave('manual'), 2000);
+        return () => clearTimeout(timer);
+    }, [content]);
+
+    // Handle Text Selection
+    const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+        const target = e.currentTarget;
+        if (target.selectionStart !== target.selectionEnd) {
+            setSelectionRange({ start: target.selectionStart, end: target.selectionEnd });
+            setSelectedText(target.value.substring(target.selectionStart, target.selectionEnd));
+        } else {
+            setSelectionRange(null);
+            setSelectedText('');
+        }
+    };
+
+    const openDraftModal = () => {
+        setIsDraftSettingsOpen(true);
+    };
+
+    const handleAIDraft = async (contextLimit: number) => {
+        if (!node || !currentBook) return;
+        setViewMode('edit');
+        try {
+            await aiDraft(node, currentBook, (newContent) => {
+                setContent(newContent);
+                if (editorRef.current) {
+                    editorRef.current.scrollTop = editorRef.current.scrollHeight;
+                }
+            }, contextLimit);
+            // Reload history after generation
+            const h = await getHistory(node.id);
+            setHistory(h);
+            setHistoryIndex(h.length - 1);
+            toast.success('草稿生成完成！');
+        } catch (e) {
+            console.error('Draft failed', e);
+            toast.error('草稿生成失败', {
+                label: "重试",
+                onClick: () => handleAIDraft(contextLimit)
+            });
+        }
+    };
+
+    const handlePolish = async () => {
+        if (!node || !currentBook || !selectionRange) return;
+        try {
+            const preContext = content.substring(0, selectionRange.start);
+            const postContext = content.substring(selectionRange.end);
+
+            await aiPolish(
+                selectedText,
+                preContext,
+                postContext,
+                currentBook,
+                node.id,
+                (newContent) => setContent(newContent)
+            );
+
+            // Reload history after polish
+            const h = await getHistory(node.id);
+            setHistory(h);
+            setHistoryIndex(h.length - 1);
+
+            setSelectionRange(null);
+            setSelectedText('');
+            toast.success('润色完成！');
+        } catch (e) {
+            console.error('Polish failed', e);
+            toast.error('润色失败', {
+                label: "重试",
+                onClick: handlePolish
+            });
+        }
+    };
+
+    // Handlers for updating sidebar summaries
+    const updateNodeSummary = async (val: string) => {
+        if (node) {
+            setNode({ ...node, summary: val }); // Optimistic UI
+            await db.nodes.update(node.id, { summary: val });
+        }
+    };
+
+    const updateParentSummary = async (val: string) => {
+        if (parentNode) {
+            setParentNode({ ...parentNode, summary: val });
+            await db.nodes.update(parentNode.id, { summary: val });
+        }
+    };
+
+    if (!activeNodeId || (!node && !isLoading)) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
+                <div className="text-center">
+                    <Icons.Feather className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                    <p>请从左侧大纲选择一个节点开始编织故事。</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (isLoading && !node) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
+                <div className="animate-pulse">加载中...</div>
+            </div>
+        );
+    }
+
+    if (!node) return null;
+
+    const getNodeTypeName = (type: string) => {
+        switch (type) {
+            case 'volume': return '卷';
+            case 'arc': return '剧情';
+            case 'chapter': return '章';
+            case 'scene': return '场景';
+            default: return type;
+        }
+    };
+
+    const getFloatingPanelTitle = () => {
+        switch (floatingContextPanel) {
+            case 'node-summary':
+                return '节点摘要';
+            case 'parent-summary':
+                return '上级摘要';
+            case 'world':
+                return '世界观';
+            case 'characters':
+                return '角色列表';
+            default:
+                return '';
+        }
+    };
+
+    const renderFloatingContextContent = () => {
+        if (!floatingContextPanel) return null;
+
+        if (floatingContextPanel === 'node-summary') {
+            return (
+                <textarea
+                    value={node.summary}
+                    onChange={(e) => updateNodeSummary(e.target.value)}
+                    className="w-full h-full min-h-[460px] bg-secondary/50 border border-border focus:border-primary/50 rounded-xl p-4 text-sm text-foreground/90 leading-relaxed resize-none focus:outline-none transition-colors scrollbar-thin"
+                />
+            );
+        }
+
+        if (floatingContextPanel === 'parent-summary') {
+            return (
+                <textarea
+                    value={parentNode?.summary || ''}
+                    onChange={(e) => updateParentSummary(e.target.value)}
+                    className="w-full h-full min-h-[460px] bg-secondary/50 border border-border focus:border-blue-500/50 rounded-xl p-4 text-sm text-foreground/90 leading-relaxed resize-none focus:outline-none transition-colors scrollbar-thin"
+                />
+            );
+        }
+
+        if (floatingContextPanel === 'world') {
+            return (
+                <div className="h-full overflow-y-auto bg-secondary/30 border border-border rounded-xl p-5 scrollbar-thin">
+                    <div className="text-sm leading-8 text-foreground/90 whitespace-pre-wrap">
+                        {currentBook?.worldSetting || '暂无世界观设定'}
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="h-full overflow-y-auto space-y-3 scrollbar-thin">
+                {(currentBook?.characters || []).map((char, i) => (
+                    <div key={`${char.name}-${i}`} className="bg-secondary/30 p-4 rounded-xl border border-border/60">
+                        <div className="text-sm font-bold text-foreground flex items-center justify-between">
+                            <span>{char.name}</span>
+                            <span className="text-xs text-muted-foreground font-medium">{char.role}</span>
+                        </div>
+                        <div className="text-xs text-foreground/80 mt-3 leading-6 whitespace-pre-wrap">
+                            {char.description}
+                        </div>
+                        {char.secret && (
+                            <div className="mt-3 pt-3 border-t border-border/60 text-xs text-muted-foreground leading-6 whitespace-pre-wrap">
+                                秘密：{char.secret}
+                            </div>
+                        )}
+                    </div>
+                ))}
+                {(currentBook?.characters || []).length === 0 && (
+                    <div className="text-sm text-muted-foreground italic py-8 text-center">暂无角色信息</div>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="flex-1 flex flex-col h-full bg-background relative">
+            {/* Settings Modal */}
+            {currentBook && (
+                <BookSettingsModal
+                    book={currentBook}
+                    isOpen={isSettingsOpen}
+                    onClose={() => setIsSettingsOpen(false)}
+                    onUpdate={(b) => setCurrentBook(b)}
+                />
+            )}
+
+            <ModelSettingsModal
+                isOpen={isModelSettingsOpen}
+                onClose={() => setIsModelSettingsOpen(false)}
+            />
+
+            <TaskQueueModal
+                isOpen={isTaskQueueOpen}
+                onClose={() => setIsTaskQueueOpen(false)}
+                node={node}
+            />
+
+            <ConsistencyCheckModal
+                isOpen={isConsistencyOpen}
+                onClose={() => setIsConsistencyOpen(false)}
+            />
+
+            {/* Header */}
+            <div className="h-14 border-b border-border flex items-center justify-between px-6 bg-card/50 backdrop-blur z-20">
+                <div className="flex items-center">
+                    <span className={`text-xs uppercase font-mono mr-3 px-2 py-0.5 rounded ${node.type === 'scene' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                        {getNodeTypeName(node.type)}
+                    </span>
+                    <h2 className="font-semibold text-foreground truncate max-w-[150px] md:max-w-md">{node.title}</h2>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                    {/* Model Settings Button */}
+                    <button
+                        onClick={() => setIsModelSettingsOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="AI 模型设置"
+                    >
+                        <Icons.Cpu size={18} />
+                    </button>
+
+                    <button
+                        onClick={() => setIsTaskQueueOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="任务队列"
+                    >
+                        <Icons.Layers size={18} />
+                    </button>
+
+                    <button
+                        onClick={() => setIsConsistencyOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="一致性检查"
+                    >
+                        <Icons.AlertTriangle size={18} />
+                    </button>
+
+                    <div className="w-px h-4 bg-border mx-1" />
+
+                    {/* Zen Mode Toggle */}
+                    <button
+                        onClick={toggleZenMode}
+                        className={`p-1.5 rounded-md transition-colors ${isZenMode ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}
+                        title={isZenMode ? "退出禅模式 (Exit Zen Mode)" : "进入禅模式 (Enter Zen Mode)"}
+                    >
+                        {isZenMode ? <Icons.Minimize size={18} /> : <Icons.Maximize size={18} />}
+                    </button>
+
+                    {/* History Controls */}
+                    <div className="flex items-center space-x-1 mr-4 border-r border-border pr-4">
+                        <button
+                            onClick={handleUndo}
+                            disabled={historyIndex <= 0 || isGenerating}
+                            className="p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-20 transition-colors"
+                            title="撤销 (Undo)"
+                        >
+                            <Icons.RotateCcw size={16} />
+                        </button>
+                        <button
+                            onClick={handleRedo}
+                            disabled={historyIndex >= history.length - 1 || isGenerating}
+                            className="p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-20 transition-colors"
+                            title="重做 (Redo)"
+                        >
+                            <Icons.RotateCw size={16} />
+                        </button>
+                    </div>
+
+                    {/* View Mode Toggle */}
+                    <div className="flex bg-secondary rounded-lg p-0.5 border border-border">
+                        <button
+                            onClick={() => setViewMode('edit')}
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'edit' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            编辑
+                        </button>
+                        <button
+                            onClick={() => setViewMode('preview')}
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'preview' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            预览
+                        </button>
+                        <button
+                            onClick={() => setViewMode('diff')}
+                            disabled={history.length < 1}
+                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'diff' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground disabled:opacity-30'}`}
+                        >
+                            对比
+                        </button>
+                    </div>
+
+                    {/* Polish Button (Visible only when text is selected) */}
+                    {selectedText && !isGenerating && (
+                        <button
+                            onClick={() => handleManualSave('manual')} // Save current state before polishing
+                            onMouseDown={handlePolish}
+                            className="flex items-center space-x-2 text-xs bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 px-3 py-1.5 rounded transition-colors animate-in fade-in zoom-in duration-200"
+                        >
+                            <Icons.Wand size={14} />
+                            <span className="hidden md:inline">润色选中</span>
+                        </button>
+                    )}
+
+                    {/* Draft / Stop Button */}
+                    {node.type === 'scene' && (
+                        isGenerating ? (
+                            <button
+                                onClick={stopGeneration}
+                                className="flex items-center space-x-2 text-xs bg-red-600/20 text-red-400 hover:bg-red-600/30 px-3 py-1.5 rounded transition-colors"
+                            >
+                                <Icons.X size={14} />
+                                <span className="hidden md:inline">中止生成</span>
+                            </button>
+                        ) : (
+                            <button
+                                onClick={openDraftModal}
+                                className="flex items-center space-x-2 text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded transition-colors"
+                            >
+                                <Icons.Sparkles size={14} />
+                                <span className="hidden md:inline">一键草稿</span>
+                            </button>
+                        )
+                    )}
+                </div>
+            </div>
+
+            {/* Draft Settings Modal */}
+            <DraftSettingsModal
+                isOpen={isDraftSettingsOpen}
+                onClose={() => setIsDraftSettingsOpen(false)}
+                onConfirm={handleAIDraft}
+            />
+
+            {/* Workspace Split */}
+            <div className="flex-1 flex overflow-hidden">
+                {/* Main Editor / Preview */}
+                <div className={`flex-1 relative flex flex-col transition-all duration-700 ${isGenerating ? "shadow-[inset_0_0_100px_rgba(16,185,129,0.05)]" : ""}`}>
+
+                    {/* Generating Visual Indicator - Top Gradient Line */}
+                    <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent transition-opacity duration-500 ${isGenerating ? 'opacity-100 animate-pulse' : 'opacity-0'}`} />
+
+                    {viewMode === 'edit' ? (
+                        <textarea
+                            ref={editorRef}
+                            value={content}
+                            onChange={(e) => setContent(e.target.value)}
+                            onSelect={handleSelect}
+                            placeholder={node.type === 'scene' ? "请在此处开始撰写正文 (支持 Markdown)..." : "此节点为结构节点。请在左侧大纲中点击闪光图标进行扩写。"}
+                            className="flex-1 bg-transparent p-8 md:p-12 resize-none focus:outline-none font-serif text-lg leading-relaxed text-foreground max-w-3xl mx-auto w-full placeholder:text-muted-foreground scrollbar-thin selection:bg-primary/30"
+                        />
+                    ) : viewMode === 'preview' ? (
+                        <div className="flex-1 overflow-y-auto p-8 md:p-12 scrollbar-thin">
+                            <div className="max-w-3xl mx-auto w-full prose prose-invert prose-lg prose-emerald">
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={{
+                                        h1: ({ node, ...props }) => <h1 className="text-3xl font-bold text-primary mb-4" {...props} />,
+                                        h2: ({ node, ...props }) => <h2 className="text-2xl font-bold text-foreground mt-8 mb-4" {...props} />,
+                                        h3: ({ node, ...props }) => <h3 className="text-xl font-bold text-foreground/80 mt-6 mb-3" {...props} />,
+                                        p: ({ node, ...props }) => <p className="leading-8 text-foreground/90 mb-4" {...props} />,
+                                        blockquote: ({ node, ...props }) => <blockquote className="border-l-4 border-primary pl-4 italic text-muted-foreground my-4" {...props} />,
+                                    }}
+                                >
+                                    {content || "*暂无内容*"}
+                                </ReactMarkdown>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto p-8 md:p-12 scrollbar-thin">
+                            <div className="max-w-3xl mx-auto w-full">
+                                <h3 className="text-zinc-500 text-sm mb-4">正在对比：当前草稿 vs 历史版本</h3>
+                                <DiffViewer
+                                    oldText={historyIndex >= 0 ? history[historyIndex].content : (node?.content || '')}
+                                    newText={content}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {/* Word Count Indicator */}
+                    <div className="absolute bottom-4 right-6 text-xs text-muted-foreground font-mono bg-card/80 px-2 py-1 rounded border border-border pointer-events-none backdrop-blur z-20 transition-opacity opacity-50 hover:opacity-100">
+                        {content.length} 字
+                    </div>
+                </div>
+
+                {/* Context Sidebar (Right) - Hidden in Zen Mode */}
+                {!isZenMode && (
+                <div className="w-80 border-l border-border bg-card/50 flex flex-col h-full">
+                    {/* Sidebar Tabs */}
+                    <div className="flex border-b border-border">
+                        <button
+                            onClick={() => setSidebarTab('context')}
+                            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors relative ${sidebarTab === 'context' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            上下文
+                            {sidebarTab === 'context' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+                        </button>
+                        <button
+                            onClick={() => setSidebarTab('chat')}
+                            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors relative ${sidebarTab === 'chat' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            AI 助手
+                            {sidebarTab === 'chat' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+                        </button>
+                        <button
+                            onClick={() => setSidebarTab('history')}
+                            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors relative ${sidebarTab === 'history' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            历史
+                            {sidebarTab === 'history' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+                        </button>
+                        <button
+                            onClick={() => setSidebarTab('stats')}
+                            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors relative ${sidebarTab === 'stats' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                        >
+                            统计
+                            {sidebarTab === 'stats' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+                        </button>
+                    </div>
+
+                    {sidebarTab === 'chat' ? (
+                        <ChatPanel />
+                    ) : sidebarTab === 'history' ? (
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+                            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">版本历史</h3>
+                            <div className="space-y-3">
+                                {history.slice().reverse().map((entry, idx) => {
+                                    const realIndex = history.length - 1 - idx;
+                                    const isCurrent = historyIndex === realIndex;
+                                    return (
+                                        <div
+                                            key={entry.id}
+                                            onClick={() => {
+                                                setHistoryIndex(realIndex);
+                                                setViewMode('diff');
+                                            }}
+                                            className={`p-3 rounded border text-sm cursor-pointer transition-all ${
+                                                isCurrent
+                                                ? 'bg-primary/10 border-primary/50'
+                                                : 'bg-secondary/30 border-border hover:bg-secondary/50'
+                                            }`}
+                                        >
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                                                    entry.action === 'ai-draft' ? 'bg-purple-500/20 text-purple-500' :
+                                                    entry.action === 'ai-polish' ? 'bg-orange-500/20 text-orange-500' :
+                                                    entry.action === 'restore' ? 'bg-red-500/20 text-red-500' :
+                                                    'bg-zinc-500/20 text-zinc-500'
+                                                }`}>
+                                                    {entry.action === 'ai-draft' ? 'AI生成' :
+                                                     entry.action === 'ai-polish' ? 'AI润色' :
+                                                     entry.action === 'restore' ? '回退' : '手动'}
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {new Date(entry.timestamp).toLocaleTimeString()}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-muted-foreground line-clamp-2 font-serif opacity-80">
+                                                {entry.content.substring(0, 100)}...
+                                            </div>
+                                            {isCurrent && viewMode === 'diff' && content !== entry.content && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setContent(entry.content);
+                                                        handleManualSave('restore');
+                                                        toast.success('已恢复到此版本');
+                                                        setViewMode('edit');
+                                                    }}
+                                                    className="mt-2 w-full py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
+                                                >
+                                                    恢复此版本
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {history.length === 0 && (
+                                    <div className="text-center text-muted-foreground text-xs py-8">
+                                        暂无历史记录
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : sidebarTab === 'stats' ? (
+                        <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+                            {currentBook && <WritingStats book={currentBook} />}
+                        </div>
+                    ) : (
+                        <>
+                            <div className="p-4 border-b border-border flex items-center justify-between">
+                                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">节点信息</h3>
+                                <button
+                                    onClick={() => setIsSettingsOpen(true)}
+                                    title="编辑世界观与设定"
+                                    className="text-muted-foreground hover:text-primary transition-colors"
+                                >
+                                    <Icons.Settings size={14} />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin">
+                                <div>
+                                    <h4 className="text-sm font-medium text-emerald-500 mb-2 flex items-center justify-between">
+                                        <span className="flex items-center"><Icons.Layers size={12} className="mr-1" /> 节点摘要</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] text-zinc-600 font-normal">可编辑</span>
+                                            <button
+                                                onClick={() => setFloatingContextPanel('node-summary')}
+                                                className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                                title="浮窗查看节点摘要"
+                                            >
+                                                <Icons.Maximize size={12} />
+                                            </button>
+                                        </div>
+                                    </h4>
+                                    <textarea
+                                        value={node.summary}
+                                        onChange={(e) => updateNodeSummary(e.target.value)}
+                                        className="w-full bg-secondary/50 border border-border focus:border-primary/50 rounded p-2 text-xs text-foreground/90 leading-relaxed min-h-[100px] resize-y focus:outline-none transition-colors scrollbar-thin"
+                                    />
+                                </div>
+
+                                {parentNode && (
+                                    <div>
+                                        <h4 className="text-sm font-medium text-blue-500 mb-2 flex items-center justify-between">
+                                            <span className="flex items-center"><Icons.ChevronDown size={12} className="mr-1" /> 上级摘要</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-zinc-600 font-normal">可编辑</span>
+                                                <button
+                                                    onClick={() => setFloatingContextPanel('parent-summary')}
+                                                    className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                                    title="浮窗查看上级摘要"
+                                                >
+                                                    <Icons.Maximize size={12} />
+                                                </button>
+                                            </div>
+                                        </h4>
+                                        <textarea
+                                            value={parentNode.summary}
+                                            onChange={(e) => updateParentSummary(e.target.value)}
+                                            className="w-full bg-secondary/50 border border-border focus:border-blue-500/50 rounded p-2 text-xs text-foreground/90 leading-relaxed min-h-[100px] resize-y focus:outline-none transition-colors scrollbar-thin"
+                                        />
+                                    </div>
+                                )}
+
+                                <div>
+                                    <h4 className="text-sm font-medium text-purple-500 mb-2 flex items-center justify-between">
+                                        <span className="flex items-center">
+                                            <Icons.BookOpen size={12} className="mr-1" /> 世界观 (预览)
+                                        </span>
+                                        <button
+                                            onClick={() => setFloatingContextPanel('world')}
+                                            className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                            title="浮窗查看世界观"
+                                        >
+                                            <Icons.Maximize size={12} />
+                                        </button>
+                                    </h4>
+                                    <div className="text-xs text-muted-foreground italic leading-relaxed max-h-32 overflow-y-auto bg-secondary/30 p-2 rounded border border-border/50 scrollbar-thin">
+                                        {currentBook?.worldSetting.slice(0, 150)}...
+                                        <button onClick={() => setIsSettingsOpen(true)} className="text-primary hover:underline ml-1">查看全部</button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h4 className="text-sm font-medium text-orange-500 mb-2 flex items-center justify-between">
+                                        <span className="flex items-center">
+                                            <Icons.BookOpen size={12} className="mr-1" /> 角色列表
+                                        </span>
+                                        <button
+                                            onClick={() => setFloatingContextPanel('characters')}
+                                            className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                            title="浮窗查看角色列表"
+                                        >
+                                            <Icons.Maximize size={12} />
+                                        </button>
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {currentBook?.characters.map((char, i) => (
+                                            <div key={i} className="bg-secondary/30 p-2 rounded border border-border/50 group hover:border-border transition-colors">
+                                                <div className="text-xs font-bold text-foreground/80 flex justify-between">
+                                                    {char.name}
+                                                    <span className="text-muted-foreground font-normal">{char.role}</span>
+                                                </div>
+                                                <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{char.description}</div>
+                                            </div>
+                                        ))}
+                                        <button
+                                            onClick={() => setIsSettingsOpen(true)}
+                                            className="w-full py-1 text-xs text-muted-foreground hover:text-primary border border-dashed border-border hover:border-primary/30 rounded transition-colors"
+                                        >
+                                            管理角色
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+                )}
+            </div>
+
+            {floatingContextPanel && (
+                <div
+                    className="fixed inset-0 z-[95] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6"
+                    onClick={() => setFloatingContextPanel(null)}
+                >
+                    <div
+                        className="w-full max-w-5xl h-[86vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">
+                            <h3 className="text-base font-semibold text-foreground">{getFloatingPanelTitle()}</h3>
+                            <div className="flex items-center gap-2">
+                                {(floatingContextPanel === 'world' || floatingContextPanel === 'characters') && (
+                                    <button
+                                        onClick={() => setIsSettingsOpen(true)}
+                                        className="px-3 py-1.5 text-xs rounded-md bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                    >
+                                        打开设定编辑
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setFloatingContextPanel(null)}
+                                    className="p-2 hover:bg-secondary rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                                    title="关闭"
+                                >
+                                    <Icons.Close size={18} />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-5 md:p-6">
+                            {renderFloatingContextContent()}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
