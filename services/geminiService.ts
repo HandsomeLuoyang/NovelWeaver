@@ -1,15 +1,81 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { Book, StoryNode, NodeType, AIModel } from '../types';
+import { Book, StoryNode, NodeType } from '../types';
 import { GenesisResponse, ExpansionResponse, GenesisResponseSchema, ExpansionResponseSchema } from '../schemas';
 import { useStore } from '../store';
 
 // Type definitions for internal task identification
 type TaskType = 'genesis' | 'expansion' | 'drafting' | 'polishing' | 'chat';
+type CreativityProfile = {
+  genesis: number;
+  expansion: number;
+  drafting: number;
+  polishing: number;
+};
+
+interface TaskRuntimeConfig {
+  provider: 'google' | 'openai';
+  apiKey: string;
+  baseUrl?: string;
+  modelName: string;
+  temperature: number;
+  enableQualityCheck: boolean;
+  enableCreativitySeeds: boolean;
+}
+
+const DEFAULT_CREATIVITY: CreativityProfile = {
+  genesis: 0.9,
+  expansion: 0.8,
+  drafting: 0.75,
+  polishing: 0.6,
+};
+
+const clampTemperature = (temperature: number) => Math.max(0, Math.min(1, temperature));
+
+const resolveTaskTemperature = (task: TaskType, profile: CreativityProfile): number => {
+  switch (task) {
+    case 'genesis':
+      return clampTemperature(profile.genesis);
+    case 'expansion':
+      return clampTemperature(profile.expansion);
+    case 'drafting':
+      return clampTemperature(profile.drafting);
+    case 'polishing':
+      return clampTemperature(profile.polishing);
+    case 'chat':
+      return 0.7;
+    default:
+      return 0.7;
+  }
+};
+
+const ensureNotAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    throw new DOMException('Operation aborted', 'AbortError');
+  }
+};
+
+const getPromptControls = (task: TaskType, config: TaskRuntimeConfig) => {
+  const parts: string[] = [];
+
+  if (config.enableCreativitySeeds && task !== 'polishing') {
+    const creativitySeed = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    parts.push(`[创意种子]\nSeed: ${creativitySeed}\n在不破坏逻辑前提下，允许加入少量新颖但可解释的创意。`);
+  }
+
+  if (config.enableQualityCheck) {
+    parts.push(
+      `[质量闸门]\n输出前请做一次自检，确保：角色动机一致、时间线无冲突、世界观规则不自相矛盾。若发现冲突，先修正后输出最终结果。`
+    );
+  }
+
+  return parts.length > 0 ? `${parts.join('\n\n')}\n` : '';
+};
 
 // Helper to get configuration
-const getConfigForTask = (task: TaskType) => {
+const getConfigForTask = (task: TaskType): TaskRuntimeConfig => {
   const state = useStore.getState();
   const config = state.modelConfig;
+  const creativityProfile = config.creativityLevel || DEFAULT_CREATIVITY;
 
   let modelId = '';
   switch (task) {
@@ -50,10 +116,13 @@ const getConfigForTask = (task: TaskType) => {
   }
 
   return {
-    provider,
+    provider: provider as 'google' | 'openai',
     apiKey,
     baseUrl: modelDef.baseUrl,
-    modelName: finalModelName
+    modelName: finalModelName,
+    temperature: resolveTaskTemperature(task, creativityProfile),
+    enableQualityCheck: Boolean(config.enableQualityCheck),
+    enableCreativitySeeds: Boolean(config.enableCreativitySeeds),
   };
 };
 
@@ -74,10 +143,12 @@ const getNodeTypeName = (type: string) => {
 // --- OpenAI Compatible Helpers ---
 
 async function callOpenAI(
-  config: { apiKey: string, baseUrl?: string, modelName: string },
+  config: { apiKey: string, baseUrl?: string, modelName: string, temperature: number },
   messages: { role: string, content: string }[],
-  jsonMode: boolean = false
+  jsonMode: boolean = false,
+  signal?: AbortSignal
 ): Promise<string> {
+  ensureNotAborted(signal);
   const baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://api.openai.com/v1';
 
   // Some providers use /chat/completions, others might just be the base (careful with double slash)
@@ -93,7 +164,7 @@ async function callOpenAI(
   const body: any = {
     model: config.modelName,
     messages: messages,
-    temperature: 0.7,
+    temperature: config.temperature,
   };
 
   if (jsonMode) {
@@ -104,7 +175,8 @@ async function callOpenAI(
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal
     });
 
     if (!response.ok) {
@@ -121,9 +193,11 @@ async function callOpenAI(
 }
 
 async function* callOpenAIStream(
-  config: { apiKey: string, baseUrl?: string, modelName: string },
-  messages: { role: string, content: string }[]
+  config: { apiKey: string, baseUrl?: string, modelName: string, temperature: number },
+  messages: { role: string, content: string }[],
+  signal?: AbortSignal
 ): AsyncGenerator<string, void, unknown> {
+  ensureNotAborted(signal);
   const baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://api.openai.com/v1';
   const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
@@ -137,8 +211,9 @@ async function* callOpenAIStream(
       model: config.modelName,
       messages: messages,
       stream: true,
-      temperature: 0.7
-    })
+      temperature: config.temperature
+    }),
+    signal
   });
 
   if (!response.ok) {
@@ -152,6 +227,7 @@ async function* callOpenAIStream(
 
   let buffer = '';
   while (true) {
+    ensureNotAborted(signal);
     const { done, value } = await reader.read();
     if (done) break;
 
@@ -182,12 +258,16 @@ async function* callOpenAIStream(
  * GENESIS: From a single sentence to a Book structure.
  */
 export const genesis = async (userPrompt: string, signal?: AbortSignal): Promise<GenesisResponse> => {
+  ensureNotAborted(signal);
   updateStatus("正在连接创世引擎...");
   const config = getConfigForTask('genesis');
+  const controls = getPromptControls('genesis', config);
 
   const systemPrompt = "你是'织梦机'创世引擎。你将灵感种子培育成参天大树。请全程使用中文回答。";
   const userContent = `
        你是一位世界级的通俗小说家和金牌编辑。
+
+       ${controls}
        
        用户灵感: "${userPrompt}"
        
@@ -245,9 +325,10 @@ export const genesis = async (userPrompt: string, signal?: AbortSignal): Promise
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
-        systemInstruction: systemPrompt
+        systemInstruction: systemPrompt,
+        temperature: config.temperature
       }
-    });
+    } as any);
     const text = response.text;
     if (!text) throw new Error("AI 未返回数据");
     return GenesisResponseSchema.parse(JSON.parse(text));
@@ -262,7 +343,7 @@ export const genesis = async (userPrompt: string, signal?: AbortSignal): Promise
     // Some models (DeepSeek) might not support json_object mode perfectly or requires specific prompting, 
     // but we'll try to use it if we can, or just rely on prompt.
     // Safe bet: standard prompt + cleanup.
-    const text = await callOpenAI(config, messages, false);
+    const text = await callOpenAI(config, messages, false, signal);
 
     const cleanText = text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
     try {
@@ -283,11 +364,15 @@ export const expandNode = async (
   childType: NodeType,
   signal?: AbortSignal
 ): Promise<ExpansionResponse> => {
+  ensureNotAborted(signal);
   updateStatus(`正在分析节点: ${parentNode.title}...`);
   const config = getConfigForTask('expansion');
+  const controls = getPromptControls('expansion', config);
 
   const prompt = `
     [角色] 你是网文界的大神级作家，擅长构建严密的剧情结构。
+
+    ${controls}
 
     [全局上下文]
     书名: ${book.title}
@@ -336,8 +421,9 @@ export const expandNode = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
+        temperature: config.temperature,
       },
-    });
+    } as any);
 
     const text = response.text;
     if (!text) throw new Error("AI 未返回数据");
@@ -350,7 +436,7 @@ export const expandNode = async (
       { role: 'user', content: prompt }
     ];
 
-    const text = await callOpenAI(config, messages, false);
+    const text = await callOpenAI(config, messages, false, signal);
     const cleanText = text.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
     try {
       return ExpansionResponseSchema.parse(JSON.parse(cleanText));
@@ -372,9 +458,10 @@ export const draftScene = async (
   onStream: (chunk: string) => void,
   signal?: AbortSignal
 ): Promise<string> => {
-
+  ensureNotAborted(signal);
   updateStatus("正在读取全书大纲与前文记忆...");
   const config = getConfigForTask('drafting');
+  const controls = getPromptControls('drafting', config);
 
   const hierarchyContext = ancestors.length > 0
     ? ancestors.map(a => `[${getNodeTypeName(a.type)}: ${a.title}]\n梗概: ${a.summary}`).join('\n\n')
@@ -382,6 +469,8 @@ export const draftScene = async (
 
   const prompt = `
     [Role] 你是白金级畅销小说家。请根据以下全方位上下文撰写正文。
+
+    ${controls}
 
     === 1. 宏观世界 (World Bible) ===
     书名: ${book.title}
@@ -417,10 +506,15 @@ export const draftScene = async (
     const responseStream = await ai.models.generateContentStream({
       model: config.modelName,
       contents: prompt,
-    });
+      config: {
+        temperature: config.temperature
+      },
+      ...(signal ? { signal } : {}),
+    } as any);
 
     let fullText = "";
     for await (const chunk of responseStream) {
+      ensureNotAborted(signal);
       const text = chunk.text;
       if (text) {
         fullText += text;
@@ -438,7 +532,7 @@ export const draftScene = async (
     ];
 
     let fullText = "";
-    for await (const chunk of callOpenAIStream(config, messages)) {
+    for await (const chunk of callOpenAIStream(config, messages, signal)) {
       fullText += chunk;
       onStream(chunk);
     }
@@ -457,11 +551,15 @@ export const polishText = async (
   onStream: (chunk: string) => void,
   signal?: AbortSignal
 ): Promise<string> => {
+  ensureNotAborted(signal);
   updateStatus("正在构思润色方案...");
   const config = getConfigForTask('polishing');
+  const controls = getPromptControls('polishing', config);
 
   const prompt = `
         [角色] 你是专业的文学编辑和润色专家。
+
+        ${controls}
         
         [背景信息]
         书名: ${book.title}
@@ -489,10 +587,15 @@ export const polishText = async (
     const responseStream = await ai.models.generateContentStream({
       model: config.modelName,
       contents: prompt,
-    });
+      config: {
+        temperature: config.temperature
+      },
+      ...(signal ? { signal } : {}),
+    } as any);
 
     let fullText = "";
     for await (const chunk of responseStream) {
+      ensureNotAborted(signal);
       const text = chunk.text;
       if (text) {
         fullText += text;
@@ -510,7 +613,7 @@ export const polishText = async (
     ];
 
     let fullText = "";
-    for await (const chunk of callOpenAIStream(config, messages)) {
+    for await (const chunk of callOpenAIStream(config, messages, signal)) {
       fullText += chunk;
       onStream(chunk);
     }
@@ -528,12 +631,16 @@ export const chat = async (
   onStream: (chunk: string) => void,
   signal?: AbortSignal
 ): Promise<string> => {
+  ensureNotAborted(signal);
   // Use chat model for chat as it usually requires decent reasoning
   const config = getConfigForTask('chat');
+  const controls = getPromptControls('chat', config);
 
   const systemMessage = {
     role: 'system',
     content: `你是一个专业的写作助手。请根据提供的世界观和当前上下文回答用户的问题。
+
+    ${controls}
 
     [当前上下文]
     ${context}
@@ -565,12 +672,15 @@ ${dialogue}
       model: config.modelName,
       contents: prompt,
       config: {
+        temperature: config.temperature,
         maxOutputTokens: 2000,
       },
-    });
+      ...(signal ? { signal } : {}),
+    } as any);
 
     let fullText = "";
     for await (const chunk of result) {
+      ensureNotAborted(signal);
       const text = chunk.text;
       if (text) {
         fullText += text;
@@ -587,7 +697,7 @@ ${dialogue}
     ];
 
     let fullText = "";
-    for await (const chunk of callOpenAIStream(config, messages)) {
+    for await (const chunk of callOpenAIStream(config, messages, signal)) {
       fullText += chunk;
       onStream(chunk);
     }
