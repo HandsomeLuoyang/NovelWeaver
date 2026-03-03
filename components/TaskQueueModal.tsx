@@ -4,6 +4,7 @@ import { useStore } from '../store';
 import { StoryNode } from '../types';
 import { useToast } from '../hooks/useToast';
 import { Icons } from './Icons';
+import { db } from '../db';
 
 interface TaskQueueModalProps {
   isOpen: boolean;
@@ -25,11 +26,13 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
     taskQueue,
     isTaskQueuePaused,
     isTaskQueueRunning,
+    taskQueueConcurrency,
     enqueueTask,
     updateTaskStatus,
     removeTask,
     clearCompletedTasks,
     setTaskQueuePaused,
+    setTaskQueueConcurrency,
   } = useStore();
   const toast = useToast();
 
@@ -39,17 +42,21 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
   const canDraft = node && node.type === 'scene';
   const canPolish = node && node.type === 'scene' && Boolean(node.content?.trim());
 
-  const addTask = (type: 'expansion' | 'draft' | 'polish') => {
-    if (!currentBook || !node) return;
-
+  const hasDuplicateTask = (type: 'expansion' | 'draft' | 'polish', nodeId: string) => {
+    if (!currentBook) return false;
     const duplicate = taskQueue.some((task) =>
       task.bookId === currentBook.id &&
-      task.nodeId === node.id &&
+      task.nodeId === nodeId &&
       task.type === type &&
       (task.status === 'pending' || task.status === 'running')
     );
+    return duplicate;
+  };
 
-    if (duplicate) {
+  const addTask = (type: 'expansion' | 'draft' | 'polish') => {
+    if (!currentBook || !node) return;
+
+    if (hasDuplicateTask(type, node.id)) {
       toast.warning('队列中已存在相同任务');
       return;
     }
@@ -64,6 +71,62 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
     toast.success('任务已加入队列');
   };
 
+  const addBatchExpansionForCurrentLevel = async () => {
+    if (!currentBook || !node || node.type === 'scene') return;
+    const sameLevelNodes = await db.nodes
+      .where('bookId')
+      .equals(currentBook.id)
+      .filter((candidate) => candidate.type === node.type)
+      .toArray();
+
+    let added = 0;
+    sameLevelNodes.forEach((candidate) => {
+      if (hasDuplicateTask('expansion', candidate.id)) return;
+      enqueueTask({
+        type: 'expansion',
+        bookId: currentBook.id,
+        nodeId: candidate.id,
+        nodeTitle: candidate.title,
+      });
+      added += 1;
+    });
+
+    if (added === 0) {
+      toast.info('同层扩写任务已全部在队列中');
+    } else {
+      toast.success(`已批量加入 ${added} 条扩写任务`);
+    }
+  };
+
+  const addBatchSceneTasksForChapter = async (type: 'draft' | 'polish') => {
+    if (!currentBook || !node || node.type !== 'scene' || !node.parentId) return;
+    const siblings = await db.nodes
+      .where('parentId')
+      .equals(node.parentId)
+      .toArray();
+
+    let added = 0;
+    siblings
+      .filter((candidate) => candidate.type === 'scene')
+      .forEach((candidate) => {
+        if (type === 'polish' && !(candidate.content || '').trim()) return;
+        if (hasDuplicateTask(type, candidate.id)) return;
+        enqueueTask({
+          type,
+          bookId: currentBook.id,
+          nodeId: candidate.id,
+          nodeTitle: candidate.title,
+        });
+        added += 1;
+      });
+
+    if (added === 0) {
+      toast.info(type === 'draft' ? '本章草稿任务已全部在队列中' : '本章润色任务已全部在队列中');
+    } else {
+      toast.success(`已批量加入 ${added} 条${type === 'draft' ? '草稿' : '润色'}任务`);
+    }
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
@@ -76,7 +139,7 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
               <Icons.Layers size={18} className="text-primary" />
               AI 任务队列
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">支持扩写 / 草稿 / 润色任务串行执行</p>
+            <p className="text-xs text-muted-foreground mt-1">支持扩写 / 草稿 / 润色任务批量入队与并发执行</p>
           </div>
           <button
             onClick={onClose}
@@ -109,6 +172,27 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
             >
               加入润色任务
             </button>
+            <button
+              onClick={() => { void addBatchExpansionForCurrentLevel(); }}
+              disabled={!canExpand}
+              className="px-3 py-2 text-xs rounded-lg bg-cyan-500/10 text-cyan-600 hover:bg-cyan-500/20 disabled:opacity-40"
+            >
+              同层批量扩写
+            </button>
+            <button
+              onClick={() => { void addBatchSceneTasksForChapter('draft'); }}
+              disabled={!canDraft}
+              className="px-3 py-2 text-xs rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 disabled:opacity-40"
+            >
+              本章批量草稿
+            </button>
+            <button
+              onClick={() => { void addBatchSceneTasksForChapter('polish'); }}
+              disabled={!canDraft}
+              className="px-3 py-2 text-xs rounded-lg bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 disabled:opacity-40"
+            >
+              本章批量润色
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -124,8 +208,20 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
             >
               清理已完成
             </button>
+            <label className="flex items-center gap-1 text-xs text-muted-foreground ml-1">
+              并发
+              <select
+                value={taskQueueConcurrency}
+                onChange={(e) => setTaskQueueConcurrency(Number(e.target.value))}
+                className="bg-secondary border border-border rounded px-2 py-1 text-xs text-foreground"
+              >
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+              </select>
+            </label>
             <span className="text-xs text-muted-foreground ml-2">
-              状态：{isTaskQueuePaused ? '已暂停' : isTaskQueueRunning ? '执行中' : '空闲'}
+              状态：{isTaskQueuePaused ? '已暂停' : isTaskQueueRunning ? `执行中(并发${taskQueueConcurrency})` : '空闲'}
             </span>
           </div>
         </div>

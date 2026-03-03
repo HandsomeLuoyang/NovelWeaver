@@ -87,6 +87,7 @@ export const useTaskQueueRunner = () => {
     taskQueue,
     isTaskQueuePaused,
     isTaskQueueRunning,
+    taskQueueConcurrency,
     isGenerating,
     setGenerating,
     setGenerationStatus,
@@ -94,41 +95,63 @@ export const useTaskQueueRunner = () => {
     updateTaskStatus,
   } = useStore();
 
-  const runningTaskRef = useRef<string | null>(null);
+  const runningTaskIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (isTaskQueuePaused || isTaskQueueRunning || isGenerating) return;
-    if (runningTaskRef.current) return;
+    if (isTaskQueuePaused) return;
 
-    const nextTask = taskQueue.find((task) => task.status === 'pending');
-    if (!nextTask) return;
+    const runningTaskIds = runningTaskIdsRef.current;
+    const externalGenerationRunning = isGenerating && runningTaskIds.size === 0;
+    if (externalGenerationRunning) return;
 
-    const run = async () => {
-      runningTaskRef.current = nextTask.id;
-      setTaskQueueRunning(true);
-      setGenerating(true);
-      updateTaskStatus(nextTask.id, 'running');
-      setGenerationStatus(`任务队列执行中：${nextTask.nodeTitle}`);
+    const pendingTasks = taskQueue.filter(
+      (task) => task.status === 'pending' && !runningTaskIds.has(task.id)
+    );
+    const availableSlots = Math.max(0, taskQueueConcurrency - runningTaskIds.size);
 
-      try {
-        await executeTask(nextTask);
-        updateTaskStatus(nextTask.id, 'completed');
-      } catch (error: any) {
-        const message = error?.message || '任务执行失败';
-        updateTaskStatus(nextTask.id, 'failed', message);
-      } finally {
-        runningTaskRef.current = null;
+    if (pendingTasks.length === 0 || availableSlots === 0) {
+      if (runningTaskIds.size === 0 && isTaskQueueRunning) {
         setTaskQueueRunning(false);
         setGenerating(false);
         setGenerationStatus('');
       }
-    };
+      return;
+    }
 
-    void run();
+    const tasksToStart = pendingTasks.slice(0, availableSlots);
+    tasksToStart.forEach((task) => {
+      runningTaskIds.add(task.id);
+      setTaskQueueRunning(true);
+      setGenerating(true);
+      updateTaskStatus(task.id, 'running');
+      setGenerationStatus(`任务队列执行中：${runningTaskIds.size}/${taskQueueConcurrency}`);
+
+      const run = async () => {
+        try {
+          await executeTask(task);
+          updateTaskStatus(task.id, 'completed');
+        } catch (error: any) {
+          const message = error?.message || '任务执行失败';
+          updateTaskStatus(task.id, 'failed', message);
+        } finally {
+          runningTaskIds.delete(task.id);
+          if (runningTaskIds.size === 0) {
+            setTaskQueueRunning(false);
+            setGenerating(false);
+            setGenerationStatus('');
+          } else {
+            setGenerationStatus(`任务队列执行中：${runningTaskIds.size}/${taskQueueConcurrency}`);
+          }
+        }
+      };
+
+      void run();
+    });
   }, [
     isGenerating,
     isTaskQueuePaused,
     isTaskQueueRunning,
+    taskQueueConcurrency,
     setGenerating,
     setGenerationStatus,
     setTaskQueueRunning,

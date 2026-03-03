@@ -27,6 +27,7 @@ interface AppState {
   taskQueue: AITask[];
   isTaskQueuePaused: boolean;
   isTaskQueueRunning: boolean;
+  taskQueueConcurrency: number;
 
   // Actions
   setCurrentBook: (book: Book | null) => void;
@@ -47,6 +48,7 @@ interface AppState {
   clearCompletedTasks: () => void;
   setTaskQueuePaused: (paused: boolean) => void;
   setTaskQueueRunning: (running: boolean) => void;
+  setTaskQueueConcurrency: (concurrency: number) => void;
 
   // Toast Actions
   addToast: (toast: Toast) => void;
@@ -158,7 +160,11 @@ const readTaskQueueSnapshot = () => {
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw) as { taskQueue?: AITask[]; isTaskQueuePaused?: boolean };
+    const parsed = JSON.parse(raw) as {
+      taskQueue?: AITask[];
+      isTaskQueuePaused?: boolean;
+      taskQueueConcurrency?: number;
+    };
     const queue = Array.isArray(parsed.taskQueue)
       ? parsed.taskQueue.map((task) => ({
           ...task,
@@ -169,7 +175,8 @@ const readTaskQueueSnapshot = () => {
 
     return {
       taskQueue: queue,
-      isTaskQueuePaused: Boolean(parsed.isTaskQueuePaused)
+      isTaskQueuePaused: Boolean(parsed.isTaskQueuePaused),
+      taskQueueConcurrency: Math.min(3, Math.max(1, Number(parsed.taskQueueConcurrency || 1)))
     };
   } catch (error) {
     console.error('Failed to parse local task queue snapshot:', error);
@@ -177,7 +184,11 @@ const readTaskQueueSnapshot = () => {
   }
 };
 
-const persistTaskQueueSnapshot = (taskQueue: AITask[], isTaskQueuePaused: boolean) => {
+const persistTaskQueueSnapshot = (
+  taskQueue: AITask[],
+  isTaskQueuePaused: boolean,
+  taskQueueConcurrency: number
+) => {
   if (typeof window === 'undefined') return;
 
   const normalizedQueue = taskQueue.map((task) => ({
@@ -186,7 +197,8 @@ const persistTaskQueueSnapshot = (taskQueue: AITask[], isTaskQueuePaused: boolea
   }));
   const payload = {
     taskQueue: normalizedQueue,
-    isTaskQueuePaused
+    isTaskQueuePaused,
+    taskQueueConcurrency
   };
 
   window.localStorage.setItem(TASK_QUEUE_STORAGE_KEY, JSON.stringify(payload));
@@ -207,6 +219,7 @@ export const useStore = create<AppState>()(
       taskQueue: restoredTaskQueueState?.taskQueue || [],
       isTaskQueuePaused: restoredTaskQueueState?.isTaskQueuePaused || false,
       isTaskQueueRunning: false,
+      taskQueueConcurrency: restoredTaskQueueState?.taskQueueConcurrency || 1,
       toasts: [],
 
       models: defaultModels,
@@ -263,7 +276,7 @@ export const useStore = create<AppState>()(
             updatedAt: now
           }
         ];
-        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused, state.taskQueueConcurrency);
         return {
           taskQueue: nextQueue
         };
@@ -274,24 +287,29 @@ export const useStore = create<AppState>()(
             ? { ...task, status, error, updatedAt: Date.now() }
             : task
         );
-        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused, state.taskQueueConcurrency);
         return { taskQueue: nextQueue };
       }),
       removeTask: (taskId) => set((state) => {
         const nextQueue = state.taskQueue.filter((task) => task.id !== taskId);
-        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused, state.taskQueueConcurrency);
         return { taskQueue: nextQueue };
       }),
       clearCompletedTasks: () => set((state) => {
         const nextQueue = state.taskQueue.filter((task) => task.status !== 'completed' && task.status !== 'cancelled');
-        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused);
+        persistTaskQueueSnapshot(nextQueue, state.isTaskQueuePaused, state.taskQueueConcurrency);
         return { taskQueue: nextQueue };
       }),
       setTaskQueuePaused: (paused) => set((state) => {
-        persistTaskQueueSnapshot(state.taskQueue, paused);
+        persistTaskQueueSnapshot(state.taskQueue, paused, state.taskQueueConcurrency);
         return { isTaskQueuePaused: paused };
       }),
       setTaskQueueRunning: (running) => set({ isTaskQueueRunning: running }),
+      setTaskQueueConcurrency: (concurrency) => set((state) => {
+        const safeConcurrency = Math.min(3, Math.max(1, Math.round(concurrency)));
+        persistTaskQueueSnapshot(state.taskQueue, state.isTaskQueuePaused, safeConcurrency);
+        return { taskQueueConcurrency: safeConcurrency };
+      }),
 
       addToast: (toast) => set((state) => ({ toasts: [...state.toasts, toast] })),
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
