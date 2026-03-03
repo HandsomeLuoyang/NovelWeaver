@@ -5,7 +5,17 @@ class PluginRegistry {
   private plugins = new Map<string, NovelWeaverPlugin>();
   private actions = new Map<string, { pluginId: string; action: PluginAction }>();
 
+  private removeActionsForPlugin(pluginId: string) {
+    Array.from(this.actions.keys()).forEach((key) => {
+      if (key.startsWith(`${pluginId}:`)) {
+        this.actions.delete(key);
+      }
+    });
+  }
+
   register(plugin: NovelWeaverPlugin) {
+    // Replace old actions when plugin with same id is re-registered.
+    this.removeActionsForPlugin(plugin.id);
     this.plugins.set(plugin.id, plugin);
     plugin.actions.forEach((action) => {
       const key = `${plugin.id}:${action.id}`;
@@ -15,11 +25,7 @@ class PluginRegistry {
 
   unregister(pluginId: string) {
     this.plugins.delete(pluginId);
-    Array.from(this.actions.keys()).forEach((key) => {
-      if (key.startsWith(`${pluginId}:`)) {
-        this.actions.delete(key);
-      }
-    });
+    this.removeActionsForPlugin(pluginId);
   }
 
   listPlugins() {

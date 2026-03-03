@@ -52,6 +52,30 @@ describe('pluginRegistry', () => {
     expect(pluginRegistry.listActions().some((action) => action.id.startsWith(`${pluginId}:`))).toBe(false);
   });
 
+  it('re-registering same plugin id replaces stale actions', () => {
+    pluginRegistry.register(testPlugin);
+
+    const updatedPlugin: NovelWeaverPlugin = {
+      ...testPlugin,
+      actions: [
+        {
+          id: 'new-action',
+          title: 'New Action',
+          run: () => ({ message: 'ok' }),
+        },
+      ],
+    };
+
+    pluginRegistry.register(updatedPlugin);
+
+    const actionIds = pluginRegistry
+      .listActions()
+      .filter((action) => action.pluginId === pluginId)
+      .map((action) => action.id);
+
+    expect(actionIds).toEqual([`${pluginId}:new-action`]);
+  });
+
   it('throws when executing an unknown action', async () => {
     await expect(
       pluginRegistry.executeAction('unknown:action', {
