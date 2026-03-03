@@ -1,10 +1,13 @@
 
 import { db } from '../db';
-import { Book, StoryNode } from '../types';
+import { Book, HistoryEntry, StoryNode, StructureSnapshot } from '../types';
 
 interface ContentBackup {
+    version: number;
     books: Book[];
     nodes: StoryNode[];
+    history: HistoryEntry[];
+    snapshots: StructureSnapshot[];
 }
 
 const API_Endpoint = '/api/storage/content';
@@ -59,13 +62,25 @@ export const PersistenceService = {
             if (!data) return;
 
             // 3. Import to Dexie
-            await db.transaction('rw', db.books, db.nodes, async () => {
+            await db.transaction('rw', db.books, db.nodes, db.history, db.snapshots, async () => {
                 if (force) {
                     await db.books.clear();
                     await db.nodes.clear();
+                    await db.history.clear();
+                    await db.snapshots.clear();
                 }
-                await db.books.bulkAdd(data.books);
-                await db.nodes.bulkAdd(data.nodes);
+                if (data.books.length > 0) {
+                    await db.books.bulkAdd(data.books);
+                }
+                if (data.nodes.length > 0) {
+                    await db.nodes.bulkAdd(data.nodes);
+                }
+                if (data.history && data.history.length > 0) {
+                    await db.history.bulkAdd(data.history);
+                }
+                if (data.snapshots && data.snapshots.length > 0) {
+                    await db.snapshots.bulkAdd(data.snapshots);
+                }
             });
             console.log('Content loaded from disk successfully.');
         } catch (err) {
@@ -81,8 +96,16 @@ export const PersistenceService = {
         try {
             const books = await db.books.toArray();
             const nodes = await db.nodes.toArray();
+            const history = await db.history.toArray();
+            const snapshots = await db.snapshots.toArray();
 
-            const payload: ContentBackup = { books, nodes };
+            const payload: ContentBackup = {
+                version: 1,
+                books,
+                nodes,
+                history,
+                snapshots
+            };
 
             if (typeof window !== 'undefined') {
                 window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));

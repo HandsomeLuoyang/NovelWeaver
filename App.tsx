@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useStore } from './store';
 import { Library } from './components/Library';
 import { Outliner } from './components/Outliner';
@@ -7,7 +7,7 @@ import { Icons } from './components/Icons';
 import { ToastContainer } from './components/Toast';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PersistenceService } from './services/persistence';
-import { useEffect } from 'react';
+import { db } from './db';
 import { useTaskQueueRunner } from './hooks/useTaskQueueRunner';
 
 const App: React.FC = () => {
@@ -28,28 +28,87 @@ const App: React.FC = () => {
   }, [theme]);
 
   useEffect(() => {
-    // Initialize persistence
-    const initPersistence = async () => {
-      await PersistenceService.loadFromDisk();
+    let saveTimer: number | null = null;
+    const scheduleDiskSync = () => {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+      saveTimer = window.setTimeout(() => {
+        void PersistenceService.saveToDisk();
+      }, 800);
     };
-    initPersistence();
+
+    const booksCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const booksUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const booksDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const nodesCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const nodesUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const nodesDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const historyCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const historyUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const historyDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const snapshotsCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const snapshotsUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const snapshotsDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+
+    // Keep disk as source-of-truth by hydrating from disk snapshot first.
+    const initPersistence = async () => {
+      await PersistenceService.loadFromDisk(true);
+      // Ensure local disk snapshot exists even on first run.
+      await PersistenceService.saveToDisk();
+    };
+    void initPersistence();
+
+    // Real-time sync on all DB mutations.
+    db.books.hook('creating', booksCreatingHook);
+    db.books.hook('updating', booksUpdatingHook);
+    db.books.hook('deleting', booksDeletingHook);
+    db.nodes.hook('creating', nodesCreatingHook);
+    db.nodes.hook('updating', nodesUpdatingHook);
+    db.nodes.hook('deleting', nodesDeletingHook);
+    db.history.hook('creating', historyCreatingHook);
+    db.history.hook('updating', historyUpdatingHook);
+    db.history.hook('deleting', historyDeletingHook);
+    db.snapshots.hook('creating', snapshotsCreatingHook);
+    db.snapshots.hook('updating', snapshotsUpdatingHook);
+    db.snapshots.hook('deleting', snapshotsDeletingHook);
 
     // Auto-save every 30 seconds
-    const interval = setInterval(() => {
-      PersistenceService.saveToDisk();
+    const interval = window.setInterval(() => {
+      void PersistenceService.saveToDisk();
     }, 30000);
 
     // Save on visibility change (e.g. closing tab/switching app)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        PersistenceService.saveToDisk();
+        void PersistenceService.saveToDisk();
       }
     };
+    const handlePageHide = () => {
+      void PersistenceService.saveToDisk();
+    };
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
 
     return () => {
-      clearInterval(interval);
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+      }
+      db.books.hook('creating').unsubscribe(booksCreatingHook);
+      db.books.hook('updating').unsubscribe(booksUpdatingHook);
+      db.books.hook('deleting').unsubscribe(booksDeletingHook);
+      db.nodes.hook('creating').unsubscribe(nodesCreatingHook);
+      db.nodes.hook('updating').unsubscribe(nodesUpdatingHook);
+      db.nodes.hook('deleting').unsubscribe(nodesDeletingHook);
+      db.history.hook('creating').unsubscribe(historyCreatingHook);
+      db.history.hook('updating').unsubscribe(historyUpdatingHook);
+      db.history.hook('deleting').unsubscribe(historyDeletingHook);
+      db.snapshots.hook('creating').unsubscribe(snapshotsCreatingHook);
+      db.snapshots.hook('updating').unsubscribe(snapshotsUpdatingHook);
+      db.snapshots.hook('deleting').unsubscribe(snapshotsDeletingHook);
+      window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, []);
 

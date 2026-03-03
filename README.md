@@ -81,9 +81,9 @@ npm run preview
 
 ### 应用数据写入位置
 
-- 创作数据主存储：浏览器 `IndexedDB`（库名：`NovelWeaverDB`）
-- 设置与备份回退：`localStorage`
-- 开发模式文件备份：`data/local/content.json`、`data/local/models.json`（已 gitignore，不入库）
+- 创作数据：实时同步到本地磁盘 `data/local/content.json`（包含 books/nodes/history/snapshots）
+- 运行时缓存：浏览器 `IndexedDB`（库名：`NovelWeaverDB`）
+- 设置数据：`data/local/models.json`（并在不可写时回退 `localStorage`）
 
 ## 环境变量读取策略（通用标准）
 
