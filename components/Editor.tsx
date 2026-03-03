@@ -23,7 +23,7 @@ import { PluginCenterModal } from './PluginCenterModal';
 import { PublishWorkflowModal } from './PublishWorkflowModal';
 import { TypographySettingsModal } from './TypographySettingsModal';
 
-type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
+type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'scene-meta' | 'world' | 'characters' | null;
 type AIReviewState =
     | {
         mode: 'draft';
@@ -408,6 +408,8 @@ export const Editor: React.FC = () => {
                 return '节点摘要';
             case 'parent-summary':
                 return '上级摘要';
+            case 'scene-meta':
+                return '场景元数据';
             case 'world':
                 return '世界观';
             case 'characters':
@@ -497,6 +499,71 @@ export const Editor: React.FC = () => {
         letterSpacing: `${editorTypography.letterSpacing}px`,
     };
 
+    const renderSceneMetaEditor = (expanded: boolean) => {
+        if (node.type !== 'scene') return null;
+
+        const baseInputClass = expanded
+            ? 'w-full bg-background/60 border border-border rounded px-3 py-2 text-sm text-foreground/90 focus:outline-none focus:border-cyan-500/40'
+            : 'w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40';
+
+        return (
+            <div className={`space-y-2 rounded-lg border border-border/60 bg-secondary/20 ${expanded ? 'p-4' : 'p-2.5'}`}>
+                <input
+                    value={node.meta?.pov || ''}
+                    onChange={(e) => updateSceneMeta({ pov: e.target.value })}
+                    placeholder="POV（视角角色）"
+                    className={baseInputClass}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                    <input
+                        value={node.meta?.timeTag || ''}
+                        onChange={(e) => updateSceneMeta({ timeTag: e.target.value })}
+                        placeholder="时间标记（如 第3天）"
+                        className={baseInputClass}
+                    />
+                    <input
+                        value={node.meta?.location || ''}
+                        onChange={(e) => updateSceneMeta({ location: e.target.value })}
+                        placeholder="地点"
+                        className={baseInputClass}
+                    />
+                </div>
+                <input
+                    value={node.meta?.conflictType || ''}
+                    onChange={(e) => updateSceneMeta({ conflictType: e.target.value })}
+                    placeholder="冲突类型（内心/对抗/解谜等）"
+                    className={baseInputClass}
+                />
+                <input
+                    value={(node.meta?.participants || []).join('，')}
+                    onChange={(e) =>
+                        updateSceneMeta({
+                            participants: e.target.value
+                                .split(/[，,]/)
+                                .map((name) => name.trim())
+                                .filter(Boolean)
+                        })
+                    }
+                    placeholder="出场角色（用逗号分隔）"
+                    className={baseInputClass}
+                />
+                <input
+                    value={(node.meta?.tags || []).join('，')}
+                    onChange={(e) =>
+                        updateSceneMeta({
+                            tags: e.target.value
+                                .split(/[，,]/)
+                                .map((tag) => tag.trim())
+                                .filter(Boolean)
+                        })
+                    }
+                    placeholder="标签（伏笔、反转、战斗...）"
+                    className={baseInputClass}
+                />
+            </div>
+        );
+    };
+
     const renderFloatingContextContent = () => {
         if (!floatingContextPanel) return null;
 
@@ -526,6 +593,14 @@ export const Editor: React.FC = () => {
                     <div className="text-sm leading-8 text-foreground/90 whitespace-pre-wrap">
                         {currentBook?.worldSetting || '暂无世界观设定'}
                     </div>
+                </div>
+            );
+        }
+
+        if (floatingContextPanel === 'scene-meta') {
+            return (
+                <div className="max-w-4xl mx-auto">
+                    {renderSceneMetaEditor(true)}
                 </div>
             );
         }
@@ -1008,62 +1083,18 @@ export const Editor: React.FC = () => {
                                             <span className="flex items-center">
                                                 <Icons.Layout size={12} className="mr-1" /> 场景元数据
                                             </span>
-                                            <span className="text-[10px] text-zinc-600 font-normal">用于看板与关系分析</span>
-                                        </h4>
-                                        <div className="space-y-2 rounded-lg border border-border/60 bg-secondary/20 p-2.5">
-                                            <input
-                                                value={node.meta?.pov || ''}
-                                                onChange={(e) => updateSceneMeta({ pov: e.target.value })}
-                                                placeholder="POV（视角角色）"
-                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
-                                            />
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <input
-                                                    value={node.meta?.timeTag || ''}
-                                                    onChange={(e) => updateSceneMeta({ timeTag: e.target.value })}
-                                                    placeholder="时间标记（如 第3天）"
-                                                    className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
-                                                />
-                                                <input
-                                                    value={node.meta?.location || ''}
-                                                    onChange={(e) => updateSceneMeta({ location: e.target.value })}
-                                                    placeholder="地点"
-                                                    className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
-                                                />
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-zinc-600 font-normal">用于看板与关系分析</span>
+                                                <button
+                                                    onClick={() => setFloatingContextPanel('scene-meta')}
+                                                    className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                                    title="浮窗查看场景元数据"
+                                                >
+                                                    <Icons.Maximize size={12} />
+                                                </button>
                                             </div>
-                                            <input
-                                                value={node.meta?.conflictType || ''}
-                                                onChange={(e) => updateSceneMeta({ conflictType: e.target.value })}
-                                                placeholder="冲突类型（内心/对抗/解谜等）"
-                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
-                                            />
-                                            <input
-                                                value={(node.meta?.participants || []).join('，')}
-                                                onChange={(e) =>
-                                                    updateSceneMeta({
-                                                        participants: e.target.value
-                                                            .split(/[，,]/)
-                                                            .map((name) => name.trim())
-                                                            .filter(Boolean)
-                                                    })
-                                                }
-                                                placeholder="出场角色（用逗号分隔）"
-                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
-                                            />
-                                            <input
-                                                value={(node.meta?.tags || []).join('，')}
-                                                onChange={(e) =>
-                                                    updateSceneMeta({
-                                                        tags: e.target.value
-                                                            .split(/[，,]/)
-                                                            .map((tag) => tag.trim())
-                                                            .filter(Boolean)
-                                                    })
-                                                }
-                                                placeholder="标签（伏笔、反转、战斗...）"
-                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
-                                            />
-                                        </div>
+                                        </h4>
+                                        {renderSceneMetaEditor(false)}
                                     </div>
                                 )}
 

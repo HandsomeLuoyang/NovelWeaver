@@ -4,6 +4,7 @@ import { createAutoSnapshotForParent, db } from '../db';
 import { StoryNode } from '../types';
 import { Icons } from './Icons';
 import { useToast } from '../hooks/useToast';
+import { moveSceneInColumns } from '../services/sceneBoard';
 
 interface SceneColumn {
   chapterId: string;
@@ -29,6 +30,12 @@ const serializeColumns = (columns: SceneColumn[]) => {
       sceneIds: column.scenes.map((scene) => scene.id)
     }))
   );
+};
+
+const resolveInsertIndex = (event: React.DragEvent<HTMLDivElement>, index: number) => {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const dropInBottomHalf = event.clientY > rect.top + rect.height / 2;
+  return dropInBottomHalf ? index + 1 : index;
 };
 
 export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
@@ -80,26 +87,7 @@ export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
   const moveScene = (sceneId: string, fromChapterId: string, toChapterId: string, toIndex: number) => {
     if (fromChapterId === toChapterId && toIndex < 0) return;
 
-    setColumns((prev) => {
-      const draft = prev.map((column) => ({ ...column, scenes: [...column.scenes] }));
-      const fromColumn = draft.find((column) => column.chapterId === fromChapterId);
-      const toColumn = draft.find((column) => column.chapterId === toChapterId);
-      if (!fromColumn || !toColumn) return prev;
-
-      const sourceIndex = fromColumn.scenes.findIndex((scene) => scene.id === sceneId);
-      if (sourceIndex < 0) return prev;
-
-      const [movedScene] = fromColumn.scenes.splice(sourceIndex, 1);
-      if (!movedScene) return prev;
-
-      const safeIndex = Math.max(0, Math.min(toIndex, toColumn.scenes.length));
-      toColumn.scenes.splice(safeIndex, 0, {
-        ...movedScene,
-        parentId: toChapterId,
-      });
-
-      return draft;
-    });
+    setColumns((prev) => moveSceneInColumns(prev, sceneId, fromChapterId, toChapterId, toIndex));
   };
 
   const handleDrop = (targetChapterId: string, targetIndex: number) => {
@@ -232,7 +220,9 @@ export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
-                          handleDrop(column.chapterId, index);
+                          e.stopPropagation();
+                          const targetIndex = resolveInsertIndex(e, index);
+                          handleDrop(column.chapterId, targetIndex);
                         }}
                         className="border border-border rounded-lg bg-background p-3 cursor-move hover:border-primary/40 hover:bg-secondary/30 transition-colors"
                       >
