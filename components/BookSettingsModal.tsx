@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Book, Character } from '../types';
+import { Book, Character, StoryNode } from '../types';
 import { db } from '../db';
 import { Icons } from './Icons';
 import { CharacterList } from './WorldBible/CharacterList';
+import { RelationGraph } from './WorldBible/RelationGraph';
 import { exportAsMarkdown, exportAsText, exportAsHTML, downloadFile } from '../services/exportService';
 
 interface Props {
@@ -17,7 +18,8 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
   const [premise, setPremise] = useState(book.premise);
   const [worldSetting, setWorldSetting] = useState(book.worldSetting);
   const [characters, setCharacters] = useState<Character[]>(book.characters || []);
-  const [activeTab, setActiveTab] = useState<'basic' | 'world' | 'chars' | 'export'>('basic');
+  const [graphNodes, setGraphNodes] = useState<StoryNode[]>([]);
+  const [activeTab, setActiveTab] = useState<'basic' | 'world' | 'chars' | 'graph' | 'export'>('basic');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -27,6 +29,17 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
     setCharacters(book.characters || []);
     setActiveTab('basic');
   }, [book, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const loadNodes = async () => {
+      const nodes = await db.nodes.where('bookId').equals(book.id).toArray();
+      setGraphNodes(nodes);
+    };
+
+    void loadNodes();
+  }, [book.id, isOpen]);
 
   if (!isOpen) return null;
 
@@ -131,6 +144,14 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
             {activeTab === 'chars' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
           </button>
           <button
+            onClick={() => setActiveTab('graph')}
+            className={`flex items-center px-6 py-3 text-sm font-medium transition-all relative ${activeTab === 'graph' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Icons.GitBranch size={16} className="mr-2" />
+            关系图谱
+            {activeTab === 'graph' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+          </button>
+          <button
             onClick={() => setActiveTab('export')}
             className={`flex items-center px-6 py-3 text-sm font-medium transition-all relative ${activeTab === 'export' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}
           >
@@ -183,6 +204,12 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
                  characters={characters}
                  onChange={setCharacters}
                />
+            </div>
+          )}
+
+          {activeTab === 'graph' && (
+            <div className="max-w-4xl mx-auto animate-in fade-in duration-200">
+              <RelationGraph characters={characters} nodes={graphNodes} />
             </div>
           )}
 

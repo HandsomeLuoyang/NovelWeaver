@@ -39,6 +39,14 @@ export interface StoryNode {
   content?: string; // Only for scenes
   status: NodeStatus;
   order: number;
+  meta?: {
+    pov?: string;
+    timeTag?: string;
+    location?: string;
+    participants?: string[];
+    conflictType?: string;
+    tags?: string[];
+  };
 }
 
 export interface GenesisResponse {

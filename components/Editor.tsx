@@ -291,6 +291,16 @@ export const Editor: React.FC = () => {
         }
     };
 
+    const updateSceneMeta = async (patch: Partial<NonNullable<StoryNode['meta']>>) => {
+        if (!node || node.type !== 'scene') return;
+        const nextMeta = {
+            ...(node.meta || {}),
+            ...patch
+        };
+        setNode({ ...node, meta: nextMeta });
+        await db.nodes.update(node.id, { meta: nextMeta });
+    };
+
     if (!activeNodeId || (!node && !isLoading)) {
         return (
             <div className="flex-1 flex items-center justify-center bg-background text-muted-foreground">
@@ -773,6 +783,71 @@ export const Editor: React.FC = () => {
                                             onChange={(e) => updateParentSummary(e.target.value)}
                                             className="w-full bg-secondary/50 border border-border focus:border-blue-500/50 rounded p-2 text-xs text-foreground/90 leading-relaxed min-h-[100px] resize-y focus:outline-none transition-colors scrollbar-thin"
                                         />
+                                    </div>
+                                )}
+
+                                {node.type === 'scene' && (
+                                    <div>
+                                        <h4 className="text-sm font-medium text-cyan-500 mb-2 flex items-center justify-between">
+                                            <span className="flex items-center">
+                                                <Icons.Layout size={12} className="mr-1" /> 场景元数据
+                                            </span>
+                                            <span className="text-[10px] text-zinc-600 font-normal">用于看板与关系分析</span>
+                                        </h4>
+                                        <div className="space-y-2 rounded-lg border border-border/60 bg-secondary/20 p-2.5">
+                                            <input
+                                                value={node.meta?.pov || ''}
+                                                onChange={(e) => updateSceneMeta({ pov: e.target.value })}
+                                                placeholder="POV（视角角色）"
+                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
+                                            />
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input
+                                                    value={node.meta?.timeTag || ''}
+                                                    onChange={(e) => updateSceneMeta({ timeTag: e.target.value })}
+                                                    placeholder="时间标记（如 第3天）"
+                                                    className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
+                                                />
+                                                <input
+                                                    value={node.meta?.location || ''}
+                                                    onChange={(e) => updateSceneMeta({ location: e.target.value })}
+                                                    placeholder="地点"
+                                                    className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
+                                                />
+                                            </div>
+                                            <input
+                                                value={node.meta?.conflictType || ''}
+                                                onChange={(e) => updateSceneMeta({ conflictType: e.target.value })}
+                                                placeholder="冲突类型（内心/对抗/解谜等）"
+                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
+                                            />
+                                            <input
+                                                value={(node.meta?.participants || []).join('，')}
+                                                onChange={(e) =>
+                                                    updateSceneMeta({
+                                                        participants: e.target.value
+                                                            .split(/[，,]/)
+                                                            .map((name) => name.trim())
+                                                            .filter(Boolean)
+                                                    })
+                                                }
+                                                placeholder="出场角色（用逗号分隔）"
+                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
+                                            />
+                                            <input
+                                                value={(node.meta?.tags || []).join('，')}
+                                                onChange={(e) =>
+                                                    updateSceneMeta({
+                                                        tags: e.target.value
+                                                            .split(/[，,]/)
+                                                            .map((tag) => tag.trim())
+                                                            .filter(Boolean)
+                                                    })
+                                                }
+                                                placeholder="标签（伏笔、反转、战斗...）"
+                                                className="w-full bg-background/60 border border-border rounded px-2 py-1.5 text-xs text-foreground/90 focus:outline-none focus:border-cyan-500/40"
+                                            />
+                                        </div>
                                     </div>
                                 )}
 
