@@ -14,7 +14,14 @@ import { NodeRecycleBinModal } from './NodeRecycleBinModal';
 import { SceneBoardModal } from './SceneBoardModal';
 
 // Recursive Node Component
-const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level }) => {
+interface NodeItemProps {
+    node: StoryNode;
+    level: number;
+    generatingNodeIds: string[];
+    setGeneratingNodeIds: React.Dispatch<React.SetStateAction<string[]>>;
+}
+
+const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, setGeneratingNodeIds }) => {
     const { expandedNodeIds, toggleNodeExpansion, activeNodeId, setActiveNodeId, currentBook, setGenerating, isGenerating } = useStore();
     const toast = useToast();
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -24,6 +31,7 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
 
     const isExpanded = expandedNodeIds.includes(node.id);
     const isActive = activeNodeId === node.id;
+    const isGeneratingChildrenForNode = generatingNodeIds.includes(node.id);
 
     // Load children using useLiveQuery (REACTIVE!)
     const children = useLiveQuery(
@@ -107,6 +115,7 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
         if (!childType) return;
 
         setGenerating(true);
+        setGeneratingNodeIds([node.id]);
         if (!isExpanded) toggleNodeExpansion(node.id);
 
         try {
@@ -120,6 +129,7 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
             });
         } finally {
             setGenerating(false);
+            setGeneratingNodeIds((prev) => prev.filter((id) => id !== node.id));
         }
     };
 
@@ -130,6 +140,7 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
         if (!childType) return;
 
         setGenerating(true);
+        setGeneratingNodeIds([]);
         if (!isExpanded) toggleNodeExpansion(node.id);
 
         try {
@@ -153,6 +164,7 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
 
             for (const targetNode of sameLevelNodes) {
                 try {
+                    setGeneratingNodeIds([targetNode.id]);
                     const { createdCount, skipped } = await generateChildrenForNode(targetNode, childType, {
                         skipIfHasChildren: true
                     });
@@ -190,6 +202,7 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
             });
         } finally {
             setGenerating(false);
+            setGeneratingNodeIds([]);
         }
     };
 
@@ -366,11 +379,17 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
                             className="overflow-hidden"
                         >
                             {children.map(child => (
-                                <NodeItem key={child.id} node={child} level={level + 1} />
+                                <NodeItem
+                                    key={child.id}
+                                    node={child}
+                                    level={level + 1}
+                                    generatingNodeIds={generatingNodeIds}
+                                    setGeneratingNodeIds={setGeneratingNodeIds}
+                                />
                             ))}
                             {children.length === 0 && (
                                 <div className="pl-8 py-2">
-                                    {isGenerating ? (
+                                    {isGeneratingChildrenForNode ? (
                                         <div className="flex items-center space-x-2 text-xs text-emerald-600 dark:text-emerald-400">
                                             <div className="flex space-x-1">
                                                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-bounce"></div>
@@ -421,6 +440,7 @@ export const Outliner: React.FC = () => {
     const [isSceneBoardOpen, setIsSceneBoardOpen] = useState(false);
     const [outlineSearch, setOutlineSearch] = useState('');
     const [showRootCreateModal, setShowRootCreateModal] = useState(false);
+    const [generatingNodeIds, setGeneratingNodeIds] = useState<string[]>([]);
 
     // Reactive root nodes
     const rootNodes = useLiveQuery(
@@ -621,7 +641,13 @@ export const Outliner: React.FC = () => {
                     )}
 
                     {rootNodes.map(node => (
-                        <NodeItem key={node.id} node={node} level={0} />
+                        <NodeItem
+                            key={node.id}
+                            node={node}
+                            level={0}
+                            generatingNodeIds={generatingNodeIds}
+                            setGeneratingNodeIds={setGeneratingNodeIds}
+                        />
                     ))}
                 </div>
             </div>
@@ -697,7 +723,13 @@ export const Outliner: React.FC = () => {
                                 </div>
                             )}
                             {rootNodes.map(node => (
-                                <NodeItem key={`floating-${node.id}`} node={node} level={0} />
+                                <NodeItem
+                                    key={`floating-${node.id}`}
+                                    node={node}
+                                    level={0}
+                                    generatingNodeIds={generatingNodeIds}
+                                    setGeneratingNodeIds={setGeneratingNodeIds}
+                                />
                             ))}
                         </div>
                     </div>
