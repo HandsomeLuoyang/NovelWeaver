@@ -19,6 +19,7 @@ import { WritingStats } from './WritingStats';
 import { AIReviewModal } from './AIReviewModal';
 import { AIUsagePanel } from './AIUsagePanel';
 import { CommandPalette, PaletteCommand } from './CommandPalette';
+import { PluginCenterModal } from './PluginCenterModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
 type AIReviewState = {
@@ -46,6 +47,7 @@ export const Editor: React.FC = () => {
     const [aiReview, setAiReview] = useState<AIReviewState | null>(null);
     const [isReviewPending, setIsReviewPending] = useState(false);
     const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+    const [isPluginCenterOpen, setIsPluginCenterOpen] = useState(false);
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
@@ -328,6 +330,17 @@ export const Editor: React.FC = () => {
         }
     };
 
+    const refreshActiveNode = async () => {
+        if (!activeNodeId) return;
+        const latestNode = await db.nodes.get(activeNodeId);
+        if (!latestNode) return;
+        setNode(latestNode);
+        if (latestNode.parentId) {
+            const latestParent = await db.nodes.get(latestNode.parentId);
+            setParentNode(latestParent);
+        }
+    };
+
     const updateSceneMeta = async (patch: Partial<NonNullable<StoryNode['meta']>>) => {
         if (!node || node.type !== 'scene') return;
         const nextMeta = {
@@ -406,6 +419,11 @@ export const Editor: React.FC = () => {
                 id: 'open-model-settings',
                 title: '打开模型设置',
                 run: () => setIsModelSettingsOpen(true)
+            },
+            {
+                id: 'open-plugin-center',
+                title: '打开插件中心',
+                run: () => setIsPluginCenterOpen(true)
             },
             {
                 id: 'toggle-zen',
@@ -543,6 +561,14 @@ export const Editor: React.FC = () => {
                         <Icons.Search size={18} />
                     </button>
 
+                    <button
+                        onClick={() => setIsPluginCenterOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="插件中心"
+                    >
+                        <Icons.Cpu size={18} />
+                    </button>
+
                     {/* Model Settings Button */}
                     <button
                         onClick={() => setIsModelSettingsOpen(true)}
@@ -678,6 +704,15 @@ export const Editor: React.FC = () => {
                 isOpen={isCommandPaletteOpen}
                 onClose={() => setIsCommandPaletteOpen(false)}
                 commands={paletteCommands}
+            />
+
+            <PluginCenterModal
+                isOpen={isPluginCenterOpen}
+                onClose={() => setIsPluginCenterOpen(false)}
+                currentBook={currentBook}
+                currentNode={node}
+                selectedText={selectedText}
+                onAfterRun={() => { void refreshActiveNode(); }}
             />
 
             {/* Workspace Split */}
