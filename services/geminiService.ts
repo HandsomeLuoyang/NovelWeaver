@@ -2,6 +2,10 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { Book, StoryNode, NodeType } from '../types';
 import { GenesisResponse, ExpansionResponse, GenesisResponseSchema, ExpansionResponseSchema } from '../schemas';
 import { useStore } from '../store';
+import {
+  buildOpenAIChatCompletionsUrl,
+  formatOpenAINetworkError,
+} from './openaiCompat';
 
 // Type definitions for internal task identification
 type TaskType = 'genesis' | 'expansion' | 'drafting' | 'polishing' | 'chat';
@@ -183,12 +187,7 @@ async function callOpenAI(
   signal?: AbortSignal
 ): Promise<string> {
   ensureNotAborted(signal);
-  const baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://api.openai.com/v1';
-
-  // Some providers use /chat/completions, others might just be the base (careful with double slash)
-  // Usually user provides "https://api.deepseek.com", so we append "/chat/completions"
-  // If they provided the full path, we might need to be smarter, but standard is base URL.
-  const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  const url = buildOpenAIChatCompletionsUrl(config.baseUrl);
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -222,7 +221,7 @@ async function callOpenAI(
     return data.choices?.[0]?.message?.content || "";
   } catch (error: any) {
     console.error("OpenAI Call Failed", error);
-    throw error;
+    throw formatOpenAINetworkError(error, url);
   }
 }
 
@@ -232,31 +231,52 @@ async function* callOpenAIStream(
   signal?: AbortSignal
 ): AsyncGenerator<string, void, unknown> {
   ensureNotAborted(signal);
-  const baseUrl = config.baseUrl ? config.baseUrl.replace(/\/+$/, '') : 'https://api.openai.com/v1';
-  const url = baseUrl.endsWith('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+  const url = buildOpenAIChatCompletionsUrl(config.baseUrl);
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`
-    },
-    body: JSON.stringify({
-      model: config.modelName,
-      messages: messages,
-      stream: true,
-      temperature: config.temperature
-    }),
-    signal
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({
+        model: config.modelName,
+        messages: messages,
+        stream: true,
+        temperature: config.temperature
+      }),
+      signal
+    });
+  } catch (error) {
+    throw formatOpenAINetworkError(error, url);
+  }
 
   if (!response.ok) {
     const err = await response.text();
+    const streamUnsupported = response.status === 400
+      || response.status === 404
+      || response.status === 405
+      || response.status === 415
+      || response.status === 422
+      || /stream|sse|unsupported|not support|not implemented/i.test(err);
+
+    if (streamUnsupported) {
+      const fallback = await callOpenAI(config, messages, false, signal);
+      if (fallback) yield fallback;
+      return;
+    }
+
     throw new Error(`OpenAI Stream Error ${response.status}: ${err}`);
   }
 
   const reader = response.body?.getReader();
-  if (!reader) throw new Error("No response body");
+  if (!reader) {
+    const fallback = await callOpenAI(config, messages, false, signal);
+    if (fallback) yield fallback;
+    return;
+  }
   const decoder = new TextDecoder("utf-8");
 
   let buffer = '';
@@ -271,8 +291,8 @@ async function* callOpenAIStream(
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('data: ')) {
-        const jsonStr = trimmed.slice(6);
+      if (trimmed.startsWith('data:')) {
+        const jsonStr = trimmed.slice(5).trim();
         if (jsonStr === '[DONE]') return;
         try {
           const json = JSON.parse(jsonStr);

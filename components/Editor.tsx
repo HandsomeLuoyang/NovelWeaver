@@ -233,7 +233,8 @@ export const Editor: React.FC = () => {
             console.error('Draft failed', e);
             setContent(originalContent);
             setIsReviewPending(false);
-            toast.error('草稿生成失败', {
+            const message = e instanceof Error ? e.message : '草稿生成失败';
+            toast.error(message, {
                 label: "重试",
                 onClick: () => handleAIDraft(contextLimit)
             });
@@ -277,7 +278,8 @@ export const Editor: React.FC = () => {
             console.error('Polish failed', e);
             setContent(originalContent);
             setIsReviewPending(false);
-            toast.error('润色失败', {
+            const message = e instanceof Error ? e.message : '润色失败';
+            toast.error(message, {
                 label: "重试",
                 onClick: handlePolish
             });
