@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../store';
-import { db, moveNodeToRecycleBin } from '../db';
+import { createAutoSnapshotForParent, db, moveNodeToRecycleBin } from '../db';
 import { StoryNode, NodeType } from '../types';
 import { Icons } from './Icons';
 import { expandNode } from '../services/geminiService';
@@ -74,6 +74,9 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
         const existingChildrenCount = await db.nodes.where({ parentId: targetNode.id }).count();
         if (options.skipIfHasChildren && existingChildrenCount > 0) {
             return { createdCount: 0, skipped: true };
+        }
+        if (existingChildrenCount > 0) {
+            await createAutoSnapshotForParent(targetNode.id, 'expand');
         }
 
         const result = await expandNode(targetNode, currentBook!, childType);
@@ -204,6 +207,9 @@ const NodeItem: React.FC<{ node: StoryNode; level: number }> = ({ node, level })
         if (!childType || !currentBook) return;
 
         const childrenCount = children.length;
+        if (childrenCount > 0) {
+            await createAutoSnapshotForParent(node.id, 'manual-create');
+        }
         const newNode: StoryNode = {
             id: uuidv4(),
             bookId: currentBook.id,

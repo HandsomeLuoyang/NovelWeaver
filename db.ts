@@ -181,6 +181,37 @@ export const updateBookWordCount = async (bookId: string) => {
   return totalWords;
 };
 
+export const createAutoSnapshotForParent = async (parentId: string, reason: string = 'auto') => {
+  const parent = await db.nodes.get(parentId);
+  if (!parent) return null;
+
+  const children = await db.nodes.where('parentId').equals(parentId).sortBy('order');
+  if (children.length === 0) return null;
+
+  const recentSnapshots = await db.snapshots.where('parentId').equals(parentId).reverse().sortBy('createdAt');
+  const fingerprint = (nodes: StoryNode[]) =>
+    JSON.stringify(nodes.map((node) => ({ title: node.title, summary: node.summary, order: node.order })));
+
+  const currentFingerprint = fingerprint(children);
+  const latestFingerprint = recentSnapshots.length > 0 ? fingerprint(recentSnapshots[0].nodes) : null;
+  if (latestFingerprint && latestFingerprint === currentFingerprint) {
+    return null;
+  }
+
+  const snapshot: StructureSnapshot = {
+    id: crypto.randomUUID(),
+    parentId,
+    bookId: parent.bookId,
+    createdAt: Date.now(),
+    source: 'auto-backup',
+    name: `Auto(${reason}) ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    nodes: children
+  };
+
+  await db.snapshots.add(snapshot);
+  return snapshot.id;
+};
+
 const remapSnapshotNodes = (
   nodes: StoryNode[],
   nodeIdMap: Map<string, string>,
@@ -313,6 +344,9 @@ export const permanentlyDeleteNodeFromRecycleBin = async (entryId: string) => {
 export const moveNodeToRecycleBin = async (nodeId: string) => {
   const rootNode = await db.nodes.get(nodeId);
   if (!rootNode) throw new Error('节点不存在');
+  if (rootNode.parentId) {
+    await createAutoSnapshotForParent(rootNode.parentId, 'delete-node');
+  }
 
   const nodeIds = await collectSubtreeNodeIds(nodeId);
   const nodeList = await db.nodes.bulkGet(nodeIds);
