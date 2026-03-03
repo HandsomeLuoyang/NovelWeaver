@@ -4,6 +4,22 @@ import { NovelWeaverPlugin, PluginAction, PluginRunContext, PluginRunResult } fr
 class PluginRegistry {
   private plugins = new Map<string, NovelWeaverPlugin>();
   private actions = new Map<string, { pluginId: string; action: PluginAction }>();
+  private version = 0;
+  private listeners = new Set<() => void>();
+
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  getVersion = () => this.version;
+
+  private emitChange() {
+    this.version += 1;
+    this.listeners.forEach((listener) => listener());
+  }
 
   private removeActionsForPlugin(pluginId: string) {
     Array.from(this.actions.keys()).forEach((key) => {
@@ -21,11 +37,13 @@ class PluginRegistry {
       const key = `${plugin.id}:${action.id}`;
       this.actions.set(key, { pluginId: plugin.id, action });
     });
+    this.emitChange();
   }
 
   unregister(pluginId: string) {
     this.plugins.delete(pluginId);
     this.removeActionsForPlugin(pluginId);
+    this.emitChange();
   }
 
   listPlugins() {

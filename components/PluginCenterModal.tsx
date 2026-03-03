@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { Book, StoryNode } from '../types';
 import { useToast } from '../hooks/useToast';
@@ -26,8 +26,13 @@ export const PluginCenterModal: React.FC<PluginCenterModalProps> = ({
 }) => {
   const toast = useToast();
   const [runningActionId, setRunningActionId] = useState<string | null>(null);
+  const registryVersion = useSyncExternalStore(
+    pluginRegistry.subscribe,
+    pluginRegistry.getVersion,
+    pluginRegistry.getVersion
+  );
 
-  const plugins = useMemo(() => pluginRegistry.listPlugins(), []);
+  const plugins = useMemo(() => pluginRegistry.listPlugins(), [registryVersion]);
 
   if (!isOpen) return null;
 
