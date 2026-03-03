@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useStore } from '../store';
@@ -18,6 +18,7 @@ import { ConsistencyCheckModal } from './ConsistencyCheckModal';
 import { WritingStats } from './WritingStats';
 import { AIReviewModal } from './AIReviewModal';
 import { AIUsagePanel } from './AIUsagePanel';
+import { CommandPalette, PaletteCommand } from './CommandPalette';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
 type AIReviewState = {
@@ -44,6 +45,7 @@ export const Editor: React.FC = () => {
     const [floatingContextPanel, setFloatingContextPanel] = useState<FloatingContextPanel>(null);
     const [aiReview, setAiReview] = useState<AIReviewState | null>(null);
     const [isReviewPending, setIsReviewPending] = useState(false);
+    const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
@@ -109,6 +111,40 @@ export const Editor: React.FC = () => {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [floatingContextPanel]);
+
+    useEffect(() => {
+        const handleGlobalShortcuts = (e: KeyboardEvent) => {
+            const key = e.key.toLowerCase();
+            const isPrimary = e.metaKey || e.ctrlKey;
+
+            if (isPrimary && key === 'k') {
+                e.preventDefault();
+                setIsCommandPaletteOpen((prev) => !prev);
+                return;
+            }
+
+            if (isPrimary && key === 's') {
+                e.preventDefault();
+                void handleManualSave('manual');
+                toast.success('已保存');
+                return;
+            }
+
+            if (e.altKey && key === '1') {
+                e.preventDefault();
+                setViewMode('edit');
+            } else if (e.altKey && key === '2') {
+                e.preventDefault();
+                setViewMode('preview');
+            } else if (e.altKey && key === '3') {
+                e.preventDefault();
+                setViewMode('diff');
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalShortcuts);
+        return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+    }, [content, currentBook, node, toast]);
 
     const handleManualSave = async (action: 'manual' | 'restore' = 'manual') => {
         if (node && content !== node.content) {
@@ -348,6 +384,61 @@ export const Editor: React.FC = () => {
         }
     };
 
+    const paletteCommands: PaletteCommand[] = useMemo(() => {
+        const commands: PaletteCommand[] = [
+            {
+                id: 'save-node',
+                title: '保存当前节点',
+                hint: 'Ctrl/Cmd + S',
+                run: () => { void handleManualSave('manual'); }
+            },
+            {
+                id: 'open-task-queue',
+                title: '打开任务队列',
+                run: () => setIsTaskQueueOpen(true)
+            },
+            {
+                id: 'open-consistency',
+                title: '打开一致性检查',
+                run: () => setIsConsistencyOpen(true)
+            },
+            {
+                id: 'open-model-settings',
+                title: '打开模型设置',
+                run: () => setIsModelSettingsOpen(true)
+            },
+            {
+                id: 'toggle-zen',
+                title: isZenMode ? '退出禅模式' : '进入禅模式',
+                hint: '专注写作视图',
+                run: () => toggleZenMode()
+            },
+            {
+                id: 'view-edit',
+                title: '切换到编辑视图',
+                hint: 'Alt + 1',
+                run: () => setViewMode('edit')
+            },
+            {
+                id: 'view-preview',
+                title: '切换到预览视图',
+                hint: 'Alt + 2',
+                run: () => setViewMode('preview')
+            },
+        ];
+
+        if (history.length > 0) {
+            commands.push({
+                id: 'view-diff',
+                title: '切换到对比视图',
+                hint: 'Alt + 3',
+                run: () => setViewMode('diff')
+            });
+        }
+
+        return commands;
+    }, [handleManualSave, history.length, isZenMode, toggleZenMode]);
+
     const renderFloatingContextContent = () => {
         if (!floatingContextPanel) return null;
 
@@ -444,6 +535,14 @@ export const Editor: React.FC = () => {
                 </div>
 
                 <div className="flex items-center space-x-3">
+                    <button
+                        onClick={() => setIsCommandPaletteOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="命令面板 (Ctrl/Cmd + K)"
+                    >
+                        <Icons.Search size={18} />
+                    </button>
+
                     {/* Model Settings Button */}
                     <button
                         onClick={() => setIsModelSettingsOpen(true)}
@@ -573,6 +672,12 @@ export const Editor: React.FC = () => {
                 onApply={(acceptedContent) => {
                     void handleApplyAIReview(acceptedContent);
                 }}
+            />
+
+            <CommandPalette
+                isOpen={isCommandPaletteOpen}
+                onClose={() => setIsCommandPaletteOpen(false)}
+                commands={paletteCommands}
             />
 
             {/* Workspace Split */}
