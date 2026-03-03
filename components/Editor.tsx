@@ -20,6 +20,7 @@ import { AIReviewModal } from './AIReviewModal';
 import { AIUsagePanel } from './AIUsagePanel';
 import { CommandPalette, PaletteCommand } from './CommandPalette';
 import { PluginCenterModal } from './PluginCenterModal';
+import { PublishWorkflowModal } from './PublishWorkflowModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'world' | 'characters' | null;
 type AIReviewState = {
@@ -43,6 +44,7 @@ export const Editor: React.FC = () => {
     const [isModelSettingsOpen, setIsModelSettingsOpen] = useState(false);
     const [isTaskQueueOpen, setIsTaskQueueOpen] = useState(false);
     const [isConsistencyOpen, setIsConsistencyOpen] = useState(false);
+    const [isPublishWorkflowOpen, setIsPublishWorkflowOpen] = useState(false);
     const [floatingContextPanel, setFloatingContextPanel] = useState<FloatingContextPanel>(null);
     const [aiReview, setAiReview] = useState<AIReviewState | null>(null);
     const [isReviewPending, setIsReviewPending] = useState(false);
@@ -416,6 +418,11 @@ export const Editor: React.FC = () => {
                 run: () => setIsConsistencyOpen(true)
             },
             {
+                id: 'open-publish-workflow',
+                title: '打开发布工作流',
+                run: () => setIsPublishWorkflowOpen(true)
+            },
+            {
                 id: 'open-model-settings',
                 title: '打开模型设置',
                 run: () => setIsModelSettingsOpen(true)
@@ -594,6 +601,14 @@ export const Editor: React.FC = () => {
                         <Icons.AlertTriangle size={18} />
                     </button>
 
+                    <button
+                        onClick={() => setIsPublishWorkflowOpen(true)}
+                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
+                        title="发布工作流"
+                    >
+                        <Icons.CheckCircle size={18} />
+                    </button>
+
                     <div className="w-px h-4 bg-border mx-1" />
 
                     {/* Zen Mode Toggle */}
@@ -714,6 +729,14 @@ export const Editor: React.FC = () => {
                 selectedText={selectedText}
                 onAfterRun={() => { void refreshActiveNode(); }}
             />
+
+            {currentBook && (
+                <PublishWorkflowModal
+                    isOpen={isPublishWorkflowOpen}
+                    onClose={() => setIsPublishWorkflowOpen(false)}
+                    book={currentBook}
+                />
+            )}
 
             {/* Workspace Split */}
             <div className="flex-1 flex overflow-hidden">
