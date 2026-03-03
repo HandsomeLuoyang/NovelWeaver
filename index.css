@@ -123,6 +123,18 @@
   .animation-delay-4000 {
     animation-delay: 4s;
   }
+
+  .scene-board-scroll {
+    scrollbar-gutter: stable both-edges;
+  }
+
+  .scene-board-scroll::-webkit-scrollbar {
+    height: 10px;
+  }
+
+  .scene-board-scroll::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+  }
 }
 
 @keyframes blob {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createAutoSnapshotForParent, db } from '../db';
 import { StoryNode } from '../types';
@@ -73,7 +73,7 @@ export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
     };
 
     void load();
-  }, [bookId, isOpen, toast]);
+  }, [bookId, isOpen]);
 
   if (!isOpen) return null;
 
@@ -183,7 +183,7 @@ export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-x-auto overflow-y-hidden p-4 bg-background/30">
+        <div className="flex-1 overflow-hidden p-4 bg-background/30">
           {loading && (
             <div className="h-full flex items-center justify-center text-sm text-muted-foreground">加载中...</div>
           )}
@@ -195,13 +195,15 @@ export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
           )}
 
           {!loading && columns.length > 0 && (
-            <div className="h-full flex items-start gap-4 min-w-max">
+            <div className="h-full overflow-x-scroll overflow-y-hidden pb-3 scrollbar-thin scene-board-scroll">
+              <div className="h-full flex items-start gap-4 min-w-max pr-2">
               {columns.map((column) => (
                 <div
                   key={column.chapterId}
                   className="w-[320px] h-full bg-card border border-border rounded-xl flex flex-col"
                   onDragOver={(e) => {
                     e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
@@ -218,10 +220,15 @@ export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
                       <div
                         key={scene.id}
                         draggable
-                        onDragStart={() => setDragState({ sceneId: scene.id, fromChapterId: column.chapterId })}
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = 'move';
+                          e.dataTransfer.setData('text/plain', scene.id);
+                          setDragState({ sceneId: scene.id, fromChapterId: column.chapterId });
+                        }}
                         onDragEnd={() => setDragState(null)}
                         onDragOver={(e) => {
                           e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
                         }}
                         onDrop={(e) => {
                           e.preventDefault();
@@ -242,6 +249,7 @@ export const SceneBoardModal: React.FC<SceneBoardModalProps> = ({
                   </div>
                 </div>
               ))}
+              </div>
             </div>
           )}
         </div>

@@ -611,10 +611,11 @@ export const Editor: React.FC = () => {
 
                     <button
                         onClick={() => setIsTypographySettingsOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="排版设置"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border border-border/80 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                        title="排版设置（字体、字号、行距、字距、版心宽度）"
                     >
-                        <Icons.Layout size={18} />
+                        <Icons.Layout size={14} />
+                        <span className="hidden md:inline">排版</span>
                     </button>
 
                     {/* Model Settings Button */}
