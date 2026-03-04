@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { genesis } from '../../services/geminiService';
-import { useStore } from '../../store';
-import { createDefaultPromptProfile } from '../../services/promptProfiles';
-import { AIModel, ModelConfig, PromptProfile } from '../../types';
+import { genesis } from '../../src/services/geminiService';
+import { useStore } from '../../src/store';
+import { createDefaultPromptProfile } from '../../src/services/promptProfiles';
+import { AIModel, ModelConfig, PromptProfile } from '../../src/types';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 

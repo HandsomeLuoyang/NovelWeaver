@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractPolishedSegment } from '../../services/polishUtils';
+import { extractPolishedSegment } from '../../src/services/polishUtils';
 
 describe('extractPolishedSegment', () => {
   it('extracts text wrapped in POLISHED tags', () => {

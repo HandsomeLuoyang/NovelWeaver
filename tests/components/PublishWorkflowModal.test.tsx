@@ -1,7 +1,7 @@
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PublishWorkflowModal } from '../../components/PublishWorkflowModal';
+import { PublishWorkflowModal } from '../../src/components/PublishWorkflowModal';
 import { createBook, createNode, longDraft } from '../helpers/fixtures';
 
 const mocks = vi.hoisted(() => ({

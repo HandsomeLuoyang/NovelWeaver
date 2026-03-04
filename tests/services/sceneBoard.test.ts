@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createNode } from '../helpers/fixtures';
-import { moveSceneInColumns, moveScenesInColumns } from '../../services/sceneBoard';
+import { moveSceneInColumns, moveScenesInColumns } from '../../src/services/sceneBoard';
 
 describe('moveSceneInColumns', () => {
   it('supports precise same-column insertion (not forced to bottom)', () => {

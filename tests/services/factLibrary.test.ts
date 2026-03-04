@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createNode } from '../helpers/fixtures';
-import { buildFactPromptContext, detectLockedFactConflicts, extractFactCandidatesFromNodes } from '../../services/factLibrary';
-import { FactEntry } from '../../types';
+import { buildFactPromptContext, detectLockedFactConflicts, extractFactCandidatesFromNodes } from '../../src/services/factLibrary';
+import { FactEntry } from '../../src/types';
 
 const createFact = (overrides: Partial<FactEntry>): FactEntry => ({
   id: overrides.id || `fact-${Math.random()}`,

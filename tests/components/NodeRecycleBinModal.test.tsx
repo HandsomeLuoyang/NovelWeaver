@@ -10,17 +10,17 @@ const mocks = vi.hoisted(() => ({
   useToast: vi.fn(),
 }));
 
-vi.mock('../../db', () => ({
+vi.mock('../../src/db', () => ({
   getDeletedNodesForBook: mocks.getDeletedNodesForBook,
   restoreNodeFromRecycleBin: mocks.restoreNodeFromRecycleBin,
   permanentlyDeleteNodeFromRecycleBin: mocks.permanentlyDeleteNodeFromRecycleBin,
 }));
 
-vi.mock('../../hooks/useToast', () => ({
+vi.mock('../../src/hooks/useToast', () => ({
   useToast: mocks.useToast,
 }));
 
-import { NodeRecycleBinModal } from '../../components/NodeRecycleBinModal';
+import { NodeRecycleBinModal } from '../../src/components/NodeRecycleBinModal';
 
 afterEach(() => {
   cleanup();

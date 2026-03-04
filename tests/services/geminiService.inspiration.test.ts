@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateInspirationPack } from '../../services/geminiService';
-import { useStore } from '../../store';
-import { AIModel, ModelConfig, PromptProfile, StoryNode } from '../../types';
+import { generateInspirationPack } from '../../src/services/geminiService';
+import { useStore } from '../../src/store';
+import { AIModel, ModelConfig, PromptProfile, StoryNode } from '../../src/types';
 
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 

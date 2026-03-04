@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_EDITOR_TYPOGRAPHY, FONT_OPTIONS, sanitizeEditorTypography } from '../../services/typography';
+import { DEFAULT_EDITOR_TYPOGRAPHY, FONT_OPTIONS, sanitizeEditorTypography } from '../../src/services/typography';
 
 describe('sanitizeEditorTypography', () => {
   it('keeps valid values', () => {

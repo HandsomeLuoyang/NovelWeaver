@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   useToast: vi.fn(),
 }));
 
-vi.mock('../../db', () => ({
+vi.mock('../../src/db', () => ({
   db: {
     nodes: {
       where: mocks.where,
@@ -18,11 +18,11 @@ vi.mock('../../db', () => ({
   createAutoSnapshotForParent: vi.fn(),
 }));
 
-vi.mock('../../hooks/useToast', () => ({
+vi.mock('../../src/hooks/useToast', () => ({
   useToast: mocks.useToast,
 }));
 
-import { SceneBoardModal } from '../../components/SceneBoardModal';
+import { SceneBoardModal } from '../../src/components/SceneBoardModal';
 
 afterEach(() => {
   cleanup();

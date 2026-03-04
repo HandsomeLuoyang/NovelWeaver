@@ -1,11 +1,11 @@
 import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PluginCenterModal } from '../../components/PluginCenterModal';
-import { pluginRegistry } from '../../plugins/registry';
-import { NovelWeaverPlugin } from '../../plugins/types';
+import { PluginCenterModal } from '../../src/components/PluginCenterModal';
+import { pluginRegistry } from '../../src/plugins/registry';
+import { NovelWeaverPlugin } from '../../src/plugins/types';
 
-vi.mock('../../hooks/useToast', () => ({
+vi.mock('../../src/hooks/useToast', () => ({
   useToast: () => ({
     success: vi.fn(),
     error: vi.fn(),

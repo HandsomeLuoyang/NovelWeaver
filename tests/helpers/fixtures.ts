@@ -1,4 +1,4 @@
-import { Book, NodeStatus, NodeType, StoryNode } from '../../types';
+import { Book, NodeStatus, NodeType, StoryNode } from '../../src/types';
 
 const now = 1_700_000_000_000;
 

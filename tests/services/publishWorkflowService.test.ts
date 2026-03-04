@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluatePublishWorkflow } from '../../services/publishWorkflowService';
+import { evaluatePublishWorkflow } from '../../src/services/publishWorkflowService';
 import { createBook, createNode, longDraft } from '../helpers/fixtures';
 
 describe('evaluatePublishWorkflow', () => {

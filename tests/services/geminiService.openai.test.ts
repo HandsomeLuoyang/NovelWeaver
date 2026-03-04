@@ -3,7 +3,7 @@ import {
   buildOpenAIChatCompletionsUrl,
   formatOpenAINetworkError,
   normalizeOpenAIBaseUrl,
-} from '../../services/openaiCompat';
+} from '../../src/services/openaiCompat';
 
 describe('openai url helpers', () => {
   it('uses OpenAI default base url when empty', () => {

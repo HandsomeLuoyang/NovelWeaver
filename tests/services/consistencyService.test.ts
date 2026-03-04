@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { runConsistencyCheck } from '../../services/consistencyService';
+import { runConsistencyCheck } from '../../src/services/consistencyService';
 import { createBook, createNode, longDraft } from '../helpers/fixtures';
 
 describe('runConsistencyCheck', () => {

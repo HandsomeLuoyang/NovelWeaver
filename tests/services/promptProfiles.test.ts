@@ -5,7 +5,7 @@ import {
   normalizePromptProfiles,
   renderPrompt,
   validatePromptTemplate,
-} from '../../services/promptProfiles';
+} from '../../src/services/promptProfiles';
 
 describe('promptProfiles utilities', () => {
   it('returns independent default template objects', () => {

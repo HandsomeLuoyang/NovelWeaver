@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { pluginRegistry, initializeBuiltinPlugins } from '../../plugins/registry';
-import { NovelWeaverPlugin } from '../../plugins/types';
+import { pluginRegistry, initializeBuiltinPlugins } from '../../src/plugins/registry';
+import { NovelWeaverPlugin } from '../../src/plugins/types';
 import { createBook, createNode } from '../helpers/fixtures';
 
 const pluginId = 'test.plugin';
