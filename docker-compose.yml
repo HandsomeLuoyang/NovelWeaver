@@ -1,0 +1,29 @@
+services:
+  novelweaver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: novelweaver
+    ports:
+      - "4173:4173"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4173
+      VITE_GEMINI_API_KEY: ${VITE_GEMINI_API_KEY:-}
+      VITE_OPENAI_API_KEY: ${VITE_OPENAI_API_KEY:-}
+      VITE_API_KEY: ${VITE_API_KEY:-}
+    volumes:
+      - novelweaver_data:/app/data/local
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:4173').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  novelweaver_data:

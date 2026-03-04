@@ -133,7 +133,65 @@ npm run build
 
 ## 4. 部署实用方法
 
-### 4.1 推荐方案：Node 进程运行 preview（最省事）
+### 4.1 Docker 开箱即用（推荐给只想使用的人）
+适用于“拉代码后直接跑起来”，无需本机安装 Node。
+
+#### 快速启动
+```bash
+# 1) 准备环境变量（首次）
+cp .env.example .env
+
+# 2) 启动（首次会自动 build 镜像）
+docker compose up -d --build
+```
+
+访问：`http://localhost:4173`
+
+#### 停止与重启
+```bash
+docker compose stop
+docker compose start
+docker compose down
+```
+
+#### 健康状态查看
+Compose 已内置 `healthcheck`（检测 `http://127.0.0.1:4173`）：
+```bash
+docker compose ps
+```
+当状态显示 `healthy` 时代表服务已就绪。
+
+#### 数据持久化
+- Compose 已配置持久卷：`novelweaver_data`
+- 容器内路径：`/app/data/local`
+- 因此即使重建容器，书籍数据仍保留
+
+查看卷：
+```bash
+docker volume ls | rg novelweaver_data
+```
+
+备份卷（示例）：
+```bash
+docker run --rm -v novelweaver_data:/data -v "$PWD":/backup alpine \
+  sh -c "cd /data && tar czf /backup/novelweaver_data_backup.tgz ."
+```
+
+恢复卷（示例）：
+```bash
+docker run --rm -v novelweaver_data:/data -v "$PWD":/backup alpine \
+  sh -c "cd /data && tar xzf /backup/novelweaver_data_backup.tgz"
+```
+
+#### 升级镜像后更新
+```bash
+git pull
+docker compose up -d --build
+```
+
+---
+
+### 4.2 推荐方案：Node 进程运行 preview（最省事）
 适用于单机/内网部署，保留 `/api/storage/*` 文件读写能力。
 
 ```bash
@@ -144,7 +202,7 @@ npm run preview -- --host 0.0.0.0 --port 4173
 
 然后用 Nginx/Caddy 反代到 `4173`。
 
-### 4.2 Nginx 反代示例
+### 4.3 Nginx 反代示例
 ```nginx
 server {
   listen 80;
@@ -158,12 +216,12 @@ server {
 }
 ```
 
-### 4.3 GitHub Actions CI
+### 4.4 GitHub Actions CI
 已配置工作流：`.github/workflows/ci.yml`
 - 触发：`push/pull_request` 到 `public-main`
 - 步骤：`npm ci -> tsc -> test -> build`
 
-### 4.4 数据目录注意事项
+### 4.5 数据目录注意事项
 - `data/local/` 仅本地实例私有使用。
 - 不要把生产实例数据目录纳入 Git。
 - 请定期备份 `data/local/`（尤其是 `content.json`、`models.json`）。
