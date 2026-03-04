@@ -6,7 +6,8 @@ import {
   StructureSnapshot,
   HistoryAction,
   DeletedBookEntry,
-  DeletedNodeEntry
+  DeletedNodeEntry,
+  RecoverySnapshot
 } from './types';
 
 class NovelWeaverDatabase extends Dexie {
@@ -16,6 +17,7 @@ class NovelWeaverDatabase extends Dexie {
   snapshots!: Table<StructureSnapshot>;
   deletedBooks!: Table<DeletedBookEntry>;
   deletedNodes!: Table<DeletedNodeEntry>;
+  backups!: Table<RecoverySnapshot>;
 
   constructor() {
     super('NovelWeaverDB');
@@ -32,6 +34,15 @@ class NovelWeaverDatabase extends Dexie {
       snapshots: 'id, parentId, bookId, createdAt',
       deletedBooks: 'id, deletedAt, title',
       deletedNodes: 'id, bookId, rootNodeId, deletedAt'
+    });
+    this.version(8).stores({
+      books: 'id, title, createdAt',
+      nodes: 'id, bookId, parentId, type, order, [bookId+parentId]',
+      history: '++id, nodeId, timestamp, action',
+      snapshots: 'id, parentId, bookId, createdAt',
+      deletedBooks: 'id, deletedAt, title',
+      deletedNodes: 'id, bookId, rootNodeId, deletedAt',
+      backups: 'id, createdAt, source'
     });
   }
 }
@@ -148,35 +159,86 @@ const extractKeywords = (text: string) => {
   return Array.from(new Set(matches)).slice(0, 40);
 };
 
+const toTermFrequency = (tokens: string[]) => {
+  const tf = new Map<string, number>();
+  tokens.forEach((token) => {
+    tf.set(token, (tf.get(token) || 0) + 1);
+  });
+  return tf;
+};
+
+const cosineSimilarity = (a: Map<string, number>, b: Map<string, number>) => {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+
+  a.forEach((value, key) => {
+    normA += value * value;
+    const other = b.get(key) || 0;
+    dot += value * other;
+  });
+  b.forEach((value) => {
+    normB += value * value;
+  });
+
+  if (normA === 0 || normB === 0) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+};
+
+const buildIdf = (documents: string[][]) => {
+  const docCount = documents.length;
+  const df = new Map<string, number>();
+  documents.forEach((doc) => {
+    const seen = new Set(doc);
+    seen.forEach((token) => {
+      df.set(token, (df.get(token) || 0) + 1);
+    });
+  });
+
+  const idf = new Map<string, number>();
+  df.forEach((count, token) => {
+    idf.set(token, Math.log((docCount + 1) / (count + 1)) + 1);
+  });
+  return idf;
+};
+
+const applyIdf = (tf: Map<string, number>, idf: Map<string, number>) => {
+  const weighted = new Map<string, number>();
+  tf.forEach((value, token) => {
+    weighted.set(token, value * (idf.get(token) || 1));
+  });
+  return weighted;
+};
+
 export const getSemanticContext = async (
   bookId: string,
   currentNodeId: string,
   query: string,
   limit: number = 3
 ): Promise<string> => {
-  const keywords = extractKeywords(query);
-  if (keywords.length === 0) return "";
-
+  const queryTokens = extractKeywords(query);
+  if (queryTokens.length === 0) return "";
   const candidateScenes = (await db.nodes.where({ bookId }).toArray())
     .filter((node) => node.type === 'scene' && node.id !== currentNodeId && Boolean(node.content?.trim()));
+  const docs = candidateScenes.map((scene) => extractKeywords(`${scene.title}\n${scene.summary}\n${scene.content || ''}`));
+  docs.push(queryTokens);
+  const idf = buildIdf(docs);
+  const queryVector = applyIdf(toTermFrequency(queryTokens), idf);
 
   const scored = candidateScenes
-    .map((scene) => {
-      const haystack = `${scene.title}\n${scene.summary}\n${scene.content || ''}`.toLowerCase();
-      let score = 0;
-      for (const keyword of keywords) {
-        if (haystack.includes(keyword)) score += 1;
-      }
+    .map((scene, index) => {
+      const sceneVector = applyIdf(toTermFrequency(docs[index]), idf);
+      const score = cosineSimilarity(queryVector, sceneVector);
       return { scene, score };
     })
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score > 0.05)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
   if (scored.length === 0) return "";
 
   return scored
-    .map((item) => `[相关场景: ${item.scene.title} | 相关度:${item.score}]\n${item.scene.content || ''}`)
+    .map((item) => `[相关场景: ${item.scene.title} | 相关度:${item.score.toFixed(2)}]\n${item.scene.content || ''}`)
     .join('\n\n');
 };
 

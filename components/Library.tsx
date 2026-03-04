@@ -14,6 +14,7 @@ import { SearchBar } from './SearchBar';
 import { useToast } from '../hooks/useToast';
 import { ManualBookModal, ManualBookPayload } from './ManualBookModal';
 import { BookRecycleBinModal } from './BookRecycleBinModal';
+import { DataRecoveryModal } from './DataRecoveryModal';
 
 const GENESIS_PROMPT_MAX_CHARS = 20000;
 
@@ -25,6 +26,7 @@ export const Library: React.FC = () => {
     const [showModelSettings, setShowModelSettings] = useState(false);
     const [showManualCreate, setShowManualCreate] = useState(false);
     const [showRecycleBin, setShowRecycleBin] = useState(false);
+    const [showDataRecovery, setShowDataRecovery] = useState(false);
     const [isCreatingManual, setIsCreatingManual] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const toast = useToast();
@@ -280,6 +282,14 @@ export const Library: React.FC = () => {
                 onClose={() => setShowManualCreate(false)}
                 onConfirm={handleManualCreate}
             />
+            <DataRecoveryModal
+                isOpen={showDataRecovery}
+                onClose={() => setShowDataRecovery(false)}
+                onRestored={() => {
+                    void loadBooks();
+                    setCurrentBook(null);
+                }}
+            />
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
 
             {/* Refined Background */}
@@ -341,6 +351,12 @@ export const Library: React.FC = () => {
                             className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                         >
                             回收站
+                        </button>
+                        <button
+                            onClick={() => setShowDataRecovery(true)}
+                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            数据恢复
                         </button>
                         <button
                             onClick={() => setShowModelSettings(true)}

@@ -1,149 +1,306 @@
-
 import { db } from '../db';
 import {
-    Book,
-    HistoryEntry,
-    StoryNode,
-    StructureSnapshot,
-    DeletedBookEntry,
-    DeletedNodeEntry
+  Book,
+  HistoryEntry,
+  StoryNode,
+  StructureSnapshot,
+  DeletedBookEntry,
+  DeletedNodeEntry,
+  RecoverySnapshot,
 } from '../types';
 
 interface ContentBackup {
-    version: number;
-    books: Book[];
-    nodes: StoryNode[];
-    history: HistoryEntry[];
-    snapshots: StructureSnapshot[];
-    deletedBooks: DeletedBookEntry[];
-    deletedNodes: DeletedNodeEntry[];
+  version: number;
+  books: Book[];
+  nodes: StoryNode[];
+  history: HistoryEntry[];
+  snapshots: StructureSnapshot[];
+  deletedBooks: DeletedBookEntry[];
+  deletedNodes: DeletedNodeEntry[];
+}
+
+export interface IntegrityReport {
+  ok: boolean;
+  issues: string[];
+}
+
+export interface RecoverySnapshotMeta {
+  id: string;
+  createdAt: number;
+  size: number;
+  checksum: string;
+  source: 'auto' | 'manual';
 }
 
 const API_Endpoint = '/api/storage/content';
 const LOCAL_STORAGE_KEY = 'novelweaver-content-backup';
+const RECOVERY_ROTATION_LIMIT = 30;
+const AUTO_RECOVERY_INTERVAL = 5 * 60 * 1000;
+
+let lastAutoRecoveryAt = 0;
 
 const readLocalBackup = (): ContentBackup | null => {
-    if (typeof window === 'undefined') return null;
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return null;
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+  if (!raw) return null;
 
-    try {
-        return JSON.parse(raw) as ContentBackup;
-    } catch (error) {
-        console.error('Failed to parse local content backup:', error);
-        return null;
+  try {
+    return JSON.parse(raw) as ContentBackup;
+  } catch (error) {
+    console.error('Failed to parse local content backup:', error);
+    return null;
+  }
+};
+
+const checksum = (input: string) => {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return `h${Math.abs(hash).toString(16)}`;
+};
+
+const serialize = (payload: ContentBackup) => JSON.stringify(payload);
+
+const normalizeBackup = (payload: Partial<ContentBackup> | null | undefined): ContentBackup => {
+  const safe = payload || {};
+  return {
+    version: Number(safe.version || 1),
+    books: Array.isArray(safe.books) ? safe.books : [],
+    nodes: Array.isArray(safe.nodes) ? safe.nodes : [],
+    history: Array.isArray(safe.history) ? safe.history : [],
+    snapshots: Array.isArray(safe.snapshots) ? safe.snapshots : [],
+    deletedBooks: Array.isArray(safe.deletedBooks) ? safe.deletedBooks : [],
+    deletedNodes: Array.isArray(safe.deletedNodes) ? safe.deletedNodes : [],
+  };
+};
+
+const validateBackup = (payload: Partial<ContentBackup> | null | undefined): IntegrityReport => {
+  const issues: string[] = [];
+
+  if (!payload || typeof payload !== 'object') {
+    return { ok: false, issues: ['备份文件为空或格式无效'] };
+  }
+
+  const normalized = normalizeBackup(payload);
+
+  if (!Array.isArray(payload.books) || !Array.isArray(payload.nodes)) {
+    issues.push('books/nodes 字段缺失');
+  }
+
+  const bookIds = new Set(normalized.books.map((book) => book.id));
+  normalized.nodes.forEach((node) => {
+    if (!bookIds.has(node.bookId)) {
+      issues.push(`节点 ${node.title} 的 bookId 不存在`);
     }
+  });
+
+  const nodeMap = new Map(normalized.nodes.map((node) => [node.id, node]));
+  normalized.nodes.forEach((node) => {
+    if (node.parentId && !nodeMap.has(node.parentId)) {
+      issues.push(`节点 ${node.title} 的 parentId 无效`);
+    }
+  });
+
+  const duplicateNodeIds = normalized.nodes
+    .map((node) => node.id)
+    .filter((id, idx, arr) => arr.indexOf(id) !== idx);
+  if (duplicateNodeIds.length > 0) {
+    issues.push(`存在重复节点 ID (${duplicateNodeIds.length})`);
+  }
+
+  return {
+    ok: issues.length === 0,
+    issues,
+  };
+};
+
+const collectBackupPayload = async (): Promise<ContentBackup> => {
+  const books = await db.books.toArray();
+  const nodes = await db.nodes.toArray();
+  const history = await db.history.toArray();
+  const snapshots = await db.snapshots.toArray();
+  const deletedBooks = await db.deletedBooks.toArray();
+  const deletedNodes = await db.deletedNodes.toArray();
+
+  return {
+    version: 1,
+    books,
+    nodes,
+    history,
+    snapshots,
+    deletedBooks,
+    deletedNodes,
+  };
+};
+
+const applyBackupPayload = async (payload: ContentBackup) => {
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes], async () => {
+    await db.books.clear();
+    await db.nodes.clear();
+    await db.history.clear();
+    await db.snapshots.clear();
+    await db.deletedBooks.clear();
+    await db.deletedNodes.clear();
+
+    if (payload.books.length > 0) {
+      await db.books.bulkAdd(payload.books);
+    }
+    if (payload.nodes.length > 0) {
+      await db.nodes.bulkAdd(payload.nodes);
+    }
+    if (payload.history.length > 0) {
+      await db.history.bulkAdd(payload.history);
+    }
+    if (payload.snapshots.length > 0) {
+      await db.snapshots.bulkAdd(payload.snapshots);
+    }
+    if (payload.deletedBooks.length > 0) {
+      await db.deletedBooks.bulkAdd(payload.deletedBooks);
+    }
+    if (payload.deletedNodes.length > 0) {
+      await db.deletedNodes.bulkAdd(payload.deletedNodes);
+    }
+  });
+};
+
+const saveRecoverySnapshot = async (payload: ContentBackup, source: 'auto' | 'manual') => {
+  const serialized = serialize(payload);
+  const now = Date.now();
+
+  const snapshot: RecoverySnapshot = {
+    id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${now}-${Math.random()}`,
+    createdAt: now,
+    size: serialized.length,
+    checksum: checksum(serialized),
+    source,
+    payload: serialized,
+  };
+
+  await db.backups.add(snapshot);
+
+  const backups = await db.backups.orderBy('createdAt').toArray();
+  if (backups.length > RECOVERY_ROTATION_LIMIT) {
+    const stale = backups.slice(0, backups.length - RECOVERY_ROTATION_LIMIT);
+    await db.backups.bulkDelete(stale.map((item) => item.id));
+  }
 };
 
 export const PersistenceService = {
-    /**
-     * Loads content from local file and populates Dexie DB if DB is empty.
-     * Can be forced to overwrite if needed (e.g. valid backup found).
-     */
-    async loadFromDisk(force = false) {
-        try {
-            // 1. Check if DB has data
-            const bookCount = await db.books.count();
-            if (!force && bookCount > 0) {
-                console.log('DB not empty, skipping load from disk.');
-                return;
-            }
+  async loadFromDisk(force = false) {
+    try {
+      const bookCount = await db.books.count();
+      if (!force && bookCount > 0) {
+        console.log('DB not empty, skipping load from disk.');
+        return;
+      }
 
-            // 2. Fetch from disk API, fallback to localStorage
-            let data: ContentBackup | null = null;
+      let data: Partial<ContentBackup> | null = null;
 
-            try {
-                const res = await fetch(API_Endpoint);
-                if (res.ok) {
-                    data = await res.json();
-                    if (typeof window !== 'undefined') {
-                        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to load content from API, trying local backup.', error);
-            }
-
-            if (!data) {
-                data = readLocalBackup();
-            }
-
-            if (!data) return;
-
-            // 3. Import to Dexie
-            await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes], async () => {
-                if (force) {
-                    await db.books.clear();
-                    await db.nodes.clear();
-                    await db.history.clear();
-                    await db.snapshots.clear();
-                    await db.deletedBooks.clear();
-                    await db.deletedNodes.clear();
-                }
-                if (data.books.length > 0) {
-                    await db.books.bulkAdd(data.books);
-                }
-                if (data.nodes.length > 0) {
-                    await db.nodes.bulkAdd(data.nodes);
-                }
-                if (data.history && data.history.length > 0) {
-                    await db.history.bulkAdd(data.history);
-                }
-                if (data.snapshots && data.snapshots.length > 0) {
-                    await db.snapshots.bulkAdd(data.snapshots);
-                }
-                if (data.deletedBooks && data.deletedBooks.length > 0) {
-                    await db.deletedBooks.bulkAdd(data.deletedBooks);
-                }
-                if (data.deletedNodes && data.deletedNodes.length > 0) {
-                    await db.deletedNodes.bulkAdd(data.deletedNodes);
-                }
-            });
-            console.log('Content loaded from disk successfully.');
-        } catch (err) {
-            console.error('Persistence load error:', err);
+      try {
+        const res = await fetch(API_Endpoint);
+        if (res.ok) {
+          data = await res.json();
+          if (typeof window !== 'undefined') {
+            window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+          }
         }
-    },
+      } catch (error) {
+        console.error('Failed to load content from API, trying local backup.', error);
+      }
 
-    /**
-     * Saves current Dexie DB content to local file.
-     * Should be debounced.
-     */
-    async saveToDisk() {
-        try {
-            const books = await db.books.toArray();
-            const nodes = await db.nodes.toArray();
-            const history = await db.history.toArray();
-            const snapshots = await db.snapshots.toArray();
-            const deletedBooks = await db.deletedBooks.toArray();
-            const deletedNodes = await db.deletedNodes.toArray();
+      if (!data) {
+        data = readLocalBackup();
+      }
 
-            const payload: ContentBackup = {
-                version: 1,
-                books,
-                nodes,
-                history,
-                snapshots,
-                deletedBooks,
-                deletedNodes
-            };
+      if (!data) return;
 
-            if (typeof window !== 'undefined') {
-                window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
-            }
+      const report = validateBackup(data);
+      if (!report.ok) {
+        console.error('Backup integrity check failed:', report.issues);
+        throw new Error('备份完整性校验失败，请尝试恢复历史快照');
+      }
 
-            try {
-                await fetch(API_Endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-            } catch (error) {
-                console.error('Failed to save content via API, local backup kept.', error);
-            }
-            console.log('Content saved to disk.');
-        } catch (err) {
-            console.error('Persistence save error:', err);
-        }
+      const normalized = normalizeBackup(data);
+      await applyBackupPayload(normalized);
+      await saveRecoverySnapshot(normalized, 'manual');
+      console.log('Content loaded from disk successfully.');
+    } catch (err) {
+      console.error('Persistence load error:', err);
     }
+  },
+
+  async saveToDisk() {
+    try {
+      const payload = await collectBackupPayload();
+
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
+      }
+
+      try {
+        await fetch(API_Endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        console.error('Failed to save content via API, local backup kept.', error);
+      }
+
+      if (Date.now() - lastAutoRecoveryAt > AUTO_RECOVERY_INTERVAL) {
+        await saveRecoverySnapshot(payload, 'auto');
+        lastAutoRecoveryAt = Date.now();
+      }
+
+      console.log('Content saved to disk.');
+    } catch (err) {
+      console.error('Persistence save error:', err);
+    }
+  },
+
+  async createManualRecoverySnapshot() {
+    const payload = await collectBackupPayload();
+    await saveRecoverySnapshot(payload, 'manual');
+  },
+
+  async listRecoverySnapshots(): Promise<RecoverySnapshotMeta[]> {
+    const backups = await db.backups.orderBy('createdAt').reverse().toArray();
+    return backups.map((item) => ({
+      id: item.id,
+      createdAt: item.createdAt,
+      size: item.size,
+      checksum: item.checksum,
+      source: item.source,
+    }));
+  },
+
+  async restoreRecoverySnapshot(snapshotId: string): Promise<IntegrityReport> {
+    const snapshot = await db.backups.get(snapshotId);
+    if (!snapshot) {
+      return { ok: false, issues: ['快照不存在'] };
+    }
+
+    try {
+      const payload = JSON.parse(snapshot.payload) as Partial<ContentBackup>;
+      const report = validateBackup(payload);
+      if (!report.ok) return report;
+
+      const normalized = normalizeBackup(payload);
+      await applyBackupPayload(normalized);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
+      }
+      return { ok: true, issues: [] };
+    } catch (error) {
+      console.error(error);
+      return { ok: false, issues: ['快照解析失败'] };
+    }
+  },
+
+  async verifyCurrentDataIntegrity(): Promise<IntegrityReport> {
+    const payload = await collectBackupPayload();
+    return validateBackup(payload);
+  },
 };
