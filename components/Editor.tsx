@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useStore } from '../store';
 import { db, getLinearContext, getAncestors, saveHistory, getHistory } from '../db';
-import { StoryNode, HistoryEntry } from '../types';
+import { StoryNode, HistoryEntry, DraftGenerationSettings } from '../types';
 import { Icons } from './Icons';
 import { useAIWriter } from '../hooks/useAIWriter';
 import { BookSettingsModal } from './BookSettingsModal';
@@ -23,6 +23,7 @@ import { PluginCenterModal } from './PluginCenterModal';
 import { PublishWorkflowModal } from './PublishWorkflowModal';
 import { TypographySettingsModal } from './TypographySettingsModal';
 import { PromptManagerModal } from './PromptManagerModal';
+import { CreativeRescueModal } from './CreativeRescueModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'scene-meta' | 'world' | 'characters' | null;
 type AIReviewState =
@@ -40,7 +41,7 @@ type AIReviewState =
     };
 
 export const Editor: React.FC = () => {
-    const { activeNodeId, currentBook, setCurrentBook, isGenerating: isGlobalGenerating, isZenMode, toggleZenMode, editorTypography } = useStore();
+    const { activeNodeId, currentBook, setCurrentBook, isZenMode, toggleZenMode, editorTypography } = useStore();
     const { isGenerating, stopGeneration, handleAIDraft: aiDraft, handleAIPolish: aiPolish } = useAIWriter();
     const toast = useToast();
 
@@ -62,6 +63,7 @@ export const Editor: React.FC = () => {
     const [isPluginCenterOpen, setIsPluginCenterOpen] = useState(false);
     const [isTypographySettingsOpen, setIsTypographySettingsOpen] = useState(false);
     const [isPromptManagerOpen, setIsPromptManagerOpen] = useState(false);
+    const [isCreativeRescueOpen, setIsCreativeRescueOpen] = useState(false);
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
@@ -113,6 +115,7 @@ export const Editor: React.FC = () => {
         setFloatingContextPanel(null);
         setAiReview(null);
         setIsReviewPending(false);
+        setIsCreativeRescueOpen(false);
     }, [activeNodeId]);
 
     useEffect(() => {
@@ -216,7 +219,7 @@ export const Editor: React.FC = () => {
         setIsDraftSettingsOpen(true);
     };
 
-    const handleAIDraft = async (contextLimit: number) => {
+    const handleAIDraft = async (settings: DraftGenerationSettings) => {
         if (!node || !currentBook) return;
         setViewMode('edit');
         const originalContent = content;
@@ -227,7 +230,7 @@ export const Editor: React.FC = () => {
                 if (editorRef.current) {
                     editorRef.current.scrollTop = editorRef.current.scrollHeight;
                 }
-            }, contextLimit, { persist: false });
+            }, settings, { persist: false });
 
             if (!draft) {
                 setContent(originalContent);
@@ -248,7 +251,7 @@ export const Editor: React.FC = () => {
             const message = e instanceof Error ? e.message : '草稿生成失败';
             toast.error(message, {
                 label: "重试",
-                onClick: () => handleAIDraft(contextLimit)
+                onClick: () => handleAIDraft(settings)
             });
         }
     };
@@ -363,6 +366,13 @@ export const Editor: React.FC = () => {
         }
     };
 
+    const insertCreativeSnippet = (text: string) => {
+        if (!text.trim()) return;
+        const suffix = content.trim().length === 0 ? text.trim() : `${content.trimEnd()}\n\n${text.trim()}`;
+        setContent(suffix);
+        setViewMode('edit');
+    };
+
     const updateSceneMeta = async (patch: Partial<NonNullable<StoryNode['meta']>>) => {
         if (!node || node.type !== 'scene') return;
         const nextMeta = {
@@ -421,6 +431,23 @@ export const Editor: React.FC = () => {
         }
     };
 
+    const getFloatingPanelDescription = () => {
+        switch (floatingContextPanel) {
+            case 'node-summary':
+                return '当前节点的核心信息，可直接编辑并实时保存。';
+            case 'parent-summary':
+                return '上级节点摘要，用于校准当前场景方向。';
+            case 'scene-meta':
+                return '场景标签信息，会用于看板与关系分析。';
+            case 'world':
+                return '世界观总设定，只读浏览，编辑请进入书籍设定。';
+            case 'characters':
+                return '角色档案速览，只读浏览，编辑请进入书籍设定。';
+            default:
+                return '';
+        }
+    };
+
     const paletteCommands: PaletteCommand[] = [
         {
             id: 'save-node',
@@ -464,6 +491,12 @@ export const Editor: React.FC = () => {
             run: () => setIsPromptManagerOpen(true)
         },
         {
+            id: 'open-creative-rescue',
+            title: '打开卡文急救包',
+            hint: '灵感推进工具',
+            run: () => setIsCreativeRescueOpen(true)
+        },
+        {
             id: 'toggle-zen',
             title: isZenMode ? '退出禅模式' : '进入禅模式',
             hint: '专注写作视图',
@@ -505,6 +538,10 @@ export const Editor: React.FC = () => {
         lineHeight: editorTypography.lineHeight,
         letterSpacing: `${editorTypography.letterSpacing}px`,
     };
+
+    const toolbarGroupClass = 'flex items-center gap-1 rounded-xl border border-border/70 bg-secondary/30 px-2 py-1';
+    const toolbarLabelClass = 'px-1 text-[11px] font-semibold text-muted-foreground/90 whitespace-nowrap';
+    const toolbarButtonClass = 'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-background/80 transition-colors whitespace-nowrap';
 
     const renderSceneMetaEditor = (expanded: boolean) => {
         if (node.type !== 'scene') return null;
@@ -576,29 +613,44 @@ export const Editor: React.FC = () => {
 
         if (floatingContextPanel === 'node-summary') {
             return (
-                <textarea
-                    value={node.summary}
-                    onChange={(e) => updateNodeSummary(e.target.value)}
-                    className="w-full h-full min-h-[460px] bg-secondary/50 border border-border focus:border-primary/50 rounded-xl p-4 text-sm text-foreground/90 leading-relaxed resize-none focus:outline-none transition-colors scrollbar-thin"
-                />
+                <div className="h-full flex flex-col">
+                    <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>实时保存</span>
+                        <span>{node.summary.length} 字</span>
+                    </div>
+                    <textarea
+                        value={node.summary}
+                        onChange={(e) => updateNodeSummary(e.target.value)}
+                        className="flex-1 min-h-[460px] bg-background border border-border focus:border-primary/50 rounded-xl p-4 text-sm text-foreground/90 leading-relaxed resize-none focus:outline-none transition-colors scrollbar-thin"
+                    />
+                </div>
             );
         }
 
         if (floatingContextPanel === 'parent-summary') {
             return (
-                <textarea
-                    value={parentNode?.summary || ''}
-                    onChange={(e) => updateParentSummary(e.target.value)}
-                    className="w-full h-full min-h-[460px] bg-secondary/50 border border-border focus:border-blue-500/50 rounded-xl p-4 text-sm text-foreground/90 leading-relaxed resize-none focus:outline-none transition-colors scrollbar-thin"
-                />
+                <div className="h-full flex flex-col">
+                    <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground">
+                        <span>实时保存</span>
+                        <span>{(parentNode?.summary || '').length} 字</span>
+                    </div>
+                    <textarea
+                        value={parentNode?.summary || ''}
+                        onChange={(e) => updateParentSummary(e.target.value)}
+                        className="flex-1 min-h-[460px] bg-background border border-border focus:border-blue-500/50 rounded-xl p-4 text-sm text-foreground/90 leading-relaxed resize-none focus:outline-none transition-colors scrollbar-thin"
+                    />
+                </div>
             );
         }
 
         if (floatingContextPanel === 'world') {
             return (
-                <div className="h-full overflow-y-auto bg-secondary/30 border border-border rounded-xl p-5 scrollbar-thin">
-                    <div className="text-sm leading-8 text-foreground/90 whitespace-pre-wrap">
-                        {currentBook?.worldSetting || '暂无世界观设定'}
+                <div className="h-full overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+                    <div className="rounded-xl border border-border bg-background p-5">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">世界观设定</div>
+                        <div className="text-sm leading-8 text-foreground/90 whitespace-pre-wrap">
+                            {currentBook?.worldSetting || '暂无世界观设定'}
+                        </div>
                     </div>
                 </div>
             );
@@ -606,25 +658,29 @@ export const Editor: React.FC = () => {
 
         if (floatingContextPanel === 'scene-meta') {
             return (
-                <div className="max-w-4xl mx-auto">
-                    {renderSceneMetaEditor(true)}
+                <div className="h-full overflow-y-auto pr-1 scrollbar-thin">
+                    <div className="rounded-xl border border-border bg-background p-4 max-w-4xl mx-auto">
+                        {renderSceneMetaEditor(true)}
+                    </div>
                 </div>
             );
         }
 
         return (
-            <div className="h-full overflow-y-auto space-y-3 scrollbar-thin">
+            <div className="h-full overflow-y-auto space-y-3 pr-1 scrollbar-thin">
                 {(currentBook?.characters || []).map((char, i) => (
-                    <div key={`${char.name}-${i}`} className="bg-secondary/30 p-4 rounded-xl border border-border/60">
-                        <div className="text-sm font-bold text-foreground flex items-center justify-between">
-                            <span>{char.name}</span>
-                            <span className="text-xs text-muted-foreground font-medium">{char.role}</span>
+                    <div key={`${char.name}-${i}`} className="bg-background p-4 rounded-xl border border-border">
+                        <div className="text-sm font-bold text-foreground flex items-center justify-between gap-2">
+                            <span className="truncate">{char.name}</span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground font-medium whitespace-nowrap">
+                                {char.role || '未设定'}
+                            </span>
                         </div>
                         <div className="text-xs text-foreground/80 mt-3 leading-6 whitespace-pre-wrap">
                             {char.description}
                         </div>
                         {char.secret && (
-                            <div className="mt-3 pt-3 border-t border-border/60 text-xs text-muted-foreground leading-6 whitespace-pre-wrap">
+                            <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground leading-6 whitespace-pre-wrap">
                                 秘密：{char.secret}
                             </div>
                         )}
@@ -667,167 +723,215 @@ export const Editor: React.FC = () => {
             />
 
             {/* Header */}
-            <div className="h-14 border-b border-border flex items-center justify-between px-6 bg-card/50 backdrop-blur z-20">
-                <div className="flex items-center">
-                    <span className={`text-xs uppercase font-mono mr-3 px-2 py-0.5 rounded ${node.type === 'scene' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                        {getNodeTypeName(node.type)}
-                    </span>
-                    <h2 className="font-semibold text-foreground truncate max-w-[150px] md:max-w-md">{node.title}</h2>
+            <div className="border-b border-border bg-card/60 backdrop-blur z-20">
+                <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center min-w-0">
+                        <span className={`text-xs uppercase font-mono mr-3 px-2 py-0.5 rounded ${node.type === 'scene' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                            {getNodeTypeName(node.type)}
+                        </span>
+                        <h2 className="font-semibold text-foreground truncate max-w-[180px] md:max-w-xl">{node.title}</h2>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap">
+                        {(isGenerating || isReviewPending) && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5">
+                                <Icons.Loader2 size={12} className="animate-spin" />
+                                AI 处理中
+                            </span>
+                        )}
+                        <span className="hidden md:inline">命令面板：Ctrl/Cmd + K</span>
+                    </div>
                 </div>
 
-                <div className="flex items-center space-x-3">
-                    <button
-                        onClick={() => setIsCommandPaletteOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="命令面板 (Ctrl/Cmd + K)"
-                    >
-                        <Icons.Search size={18} />
-                    </button>
+                <div className="px-4 md:px-6 pb-3">
+                    <div className="overflow-x-auto scrollbar-thin">
+                        <div className="flex items-center gap-2 min-w-max">
+                            <div className={toolbarGroupClass}>
+                                <span className={toolbarLabelClass}>创作</span>
+                                <button
+                                    onClick={() => {
+                                        void handleManualSave('manual');
+                                        toast.success('已保存');
+                                    }}
+                                    className={toolbarButtonClass}
+                                    title="保存当前节点 (Ctrl/Cmd + S)"
+                                >
+                                    <Icons.Save size={14} />
+                                    <span>保存</span>
+                                </button>
 
-                    <button
-                        onClick={() => setIsPluginCenterOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="插件中心"
-                    >
-                        <Icons.Puzzle size={18} />
-                    </button>
+                                {selectedText && !isGenerating && (
+                                    <button
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            void handleManualSave('manual');
+                                            void handlePolish();
+                                        }}
+                                        className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-purple-600 bg-purple-500/10 hover:bg-purple-500/20 transition-colors whitespace-nowrap animate-in fade-in zoom-in duration-200"
+                                        title="仅润色当前选中内容"
+                                    >
+                                        <Icons.Wand size={14} />
+                                        <span>润色选中</span>
+                                    </button>
+                                )}
 
-                    <button
-                        onClick={() => setIsPromptManagerOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="提示词管理"
-                    >
-                        <Icons.FileText size={18} />
-                    </button>
+                                {node.type === 'scene' && (
+                                    isGenerating ? (
+                                        <button
+                                            onClick={stopGeneration}
+                                            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-red-500 bg-red-500/10 hover:bg-red-500/20 transition-colors whitespace-nowrap"
+                                        >
+                                            <Icons.X size={14} />
+                                            <span>中止生成</span>
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={openDraftModal}
+                                                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors whitespace-nowrap"
+                                            >
+                                                <Icons.Sparkles size={14} />
+                                                <span>一键草稿</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setIsCreativeRescueOpen(true)}
+                                                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-cyan-600 bg-cyan-500/10 hover:bg-cyan-500/20 transition-colors whitespace-nowrap"
+                                            >
+                                                <Icons.Wand size={14} />
+                                                <span>卡文急救</span>
+                                            </button>
+                                        </>
+                                    )
+                                )}
+                            </div>
 
-                    <button
-                        onClick={() => setIsTypographySettingsOpen(true)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs border border-border/80 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                        title="排版设置（字体、字号、行距、字距、版心宽度）"
-                    >
-                        <Icons.Layout size={14} />
-                        <span className="hidden md:inline">排版</span>
-                    </button>
+                            <div className={toolbarGroupClass}>
+                                <span className={toolbarLabelClass}>控制台</span>
+                                <button
+                                    onClick={() => setIsCommandPaletteOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="命令面板 (Ctrl/Cmd + K)"
+                                >
+                                    <Icons.Search size={14} />
+                                    <span>命令面板</span>
+                                </button>
+                                <button
+                                    onClick={() => setIsModelSettingsOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="AI 模型设置"
+                                >
+                                    <Icons.Cpu size={14} />
+                                    <span>模型中控</span>
+                                </button>
+                                <button
+                                    onClick={() => setIsTaskQueueOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="任务队列"
+                                >
+                                    <Icons.Layers size={14} />
+                                    <span>任务队列</span>
+                                </button>
+                                <button
+                                    onClick={() => setIsPluginCenterOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="插件中心"
+                                >
+                                    <Icons.Puzzle size={14} />
+                                    <span>插件中心</span>
+                                </button>
+                                <button
+                                    onClick={() => setIsPromptManagerOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="提示词管理"
+                                >
+                                    <Icons.FileText size={14} />
+                                    <span>提示词</span>
+                                </button>
+                            </div>
 
-                    {/* Model Settings Button */}
-                    <button
-                        onClick={() => setIsModelSettingsOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="AI 模型设置"
-                    >
-                        <Icons.Cpu size={18} />
-                    </button>
+                            <div className={toolbarGroupClass}>
+                                <span className={toolbarLabelClass}>质检发布</span>
+                                <button
+                                    onClick={() => setIsConsistencyOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="一致性检查"
+                                >
+                                    <Icons.AlertTriangle size={14} />
+                                    <span>一致性检查</span>
+                                </button>
+                                <button
+                                    onClick={() => setIsPublishWorkflowOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="发布工作流"
+                                >
+                                    <Icons.CheckCircle size={14} />
+                                    <span>发布工作流</span>
+                                </button>
+                            </div>
 
-                    <button
-                        onClick={() => setIsTaskQueueOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="任务队列"
-                    >
-                        <Icons.Layers size={18} />
-                    </button>
+                            <div className={toolbarGroupClass}>
+                                <span className={toolbarLabelClass}>编辑</span>
+                                <button
+                                    onClick={() => setIsTypographySettingsOpen(true)}
+                                    className={toolbarButtonClass}
+                                    title="排版设置（字体、字号、行距、字距、版心宽度）"
+                                >
+                                    <Icons.Layout size={14} />
+                                    <span>排版</span>
+                                </button>
+                                <button
+                                    onClick={toggleZenMode}
+                                    className={`${toolbarButtonClass} ${isZenMode ? 'bg-primary/10 text-primary hover:text-primary' : ''}`}
+                                    title={isZenMode ? "退出禅模式 (Exit Zen Mode)" : "进入禅模式 (Enter Zen Mode)"}
+                                >
+                                    {isZenMode ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
+                                    <span>{isZenMode ? '退出禅模式' : '禅模式'}</span>
+                                </button>
+                                <button
+                                    onClick={handleUndo}
+                                    disabled={historyIndex <= 0 || isGenerating}
+                                    className={`${toolbarButtonClass} disabled:opacity-30`}
+                                    title="撤销 (Undo)"
+                                >
+                                    <Icons.RotateCcw size={14} />
+                                    <span>撤销</span>
+                                </button>
+                                <button
+                                    onClick={handleRedo}
+                                    disabled={historyIndex >= history.length - 1 || isGenerating}
+                                    className={`${toolbarButtonClass} disabled:opacity-30`}
+                                    title="重做 (Redo)"
+                                >
+                                    <Icons.RotateCw size={14} />
+                                    <span>重做</span>
+                                </button>
+                            </div>
 
-                    <button
-                        onClick={() => setIsConsistencyOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="一致性检查"
-                    >
-                        <Icons.AlertTriangle size={18} />
-                    </button>
-
-                    <button
-                        onClick={() => setIsPublishWorkflowOpen(true)}
-                        className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-                        title="发布工作流"
-                    >
-                        <Icons.CheckCircle size={18} />
-                    </button>
-
-                    <div className="w-px h-4 bg-border mx-1" />
-
-                    {/* Zen Mode Toggle */}
-                    <button
-                        onClick={toggleZenMode}
-                        className={`p-1.5 rounded-md transition-colors ${isZenMode ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}
-                        title={isZenMode ? "退出禅模式 (Exit Zen Mode)" : "进入禅模式 (Enter Zen Mode)"}
-                    >
-                        {isZenMode ? <Icons.Minimize size={18} /> : <Icons.Maximize size={18} />}
-                    </button>
-
-                    {/* History Controls */}
-                    <div className="flex items-center space-x-1 mr-4 border-r border-border pr-4">
-                        <button
-                            onClick={handleUndo}
-                            disabled={historyIndex <= 0 || isGenerating}
-                            className="p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-20 transition-colors"
-                            title="撤销 (Undo)"
-                        >
-                            <Icons.RotateCcw size={16} />
-                        </button>
-                        <button
-                            onClick={handleRedo}
-                            disabled={historyIndex >= history.length - 1 || isGenerating}
-                            className="p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-20 transition-colors"
-                            title="重做 (Redo)"
-                        >
-                            <Icons.RotateCw size={16} />
-                        </button>
+                            <div className={toolbarGroupClass}>
+                                <span className={toolbarLabelClass}>视图</span>
+                                <div className="flex bg-background/70 rounded-lg p-0.5 border border-border">
+                                    <button
+                                        onClick={() => setViewMode('edit')}
+                                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'edit' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+                                    >
+                                        编辑
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('preview')}
+                                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'preview' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+                                    >
+                                        预览
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('diff')}
+                                        disabled={history.length < 1}
+                                        className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'diff' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground disabled:opacity-30'}`}
+                                    >
+                                        对比
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-
-                    {/* View Mode Toggle */}
-                    <div className="flex bg-secondary rounded-lg p-0.5 border border-border">
-                        <button
-                            onClick={() => setViewMode('edit')}
-                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'edit' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                            编辑
-                        </button>
-                        <button
-                            onClick={() => setViewMode('preview')}
-                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'preview' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                            预览
-                        </button>
-                        <button
-                            onClick={() => setViewMode('diff')}
-                            disabled={history.length < 1}
-                            className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode === 'diff' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground disabled:opacity-30'}`}
-                        >
-                            对比
-                        </button>
-                    </div>
-
-                    {/* Polish Button (Visible only when text is selected) */}
-                    {selectedText && !isGenerating && (
-                        <button
-                            onClick={() => handleManualSave('manual')} // Save current state before polishing
-                            onMouseDown={handlePolish}
-                            className="flex items-center space-x-2 text-xs bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 px-3 py-1.5 rounded transition-colors animate-in fade-in zoom-in duration-200"
-                        >
-                            <Icons.Wand size={14} />
-                            <span className="hidden md:inline">润色选中</span>
-                        </button>
-                    )}
-
-                    {/* Draft / Stop Button */}
-                    {node.type === 'scene' && (
-                        isGenerating ? (
-                            <button
-                                onClick={stopGeneration}
-                                className="flex items-center space-x-2 text-xs bg-red-600/20 text-red-400 hover:bg-red-600/30 px-3 py-1.5 rounded transition-colors"
-                            >
-                                <Icons.X size={14} />
-                                <span className="hidden md:inline">中止生成</span>
-                            </button>
-                        ) : (
-                            <button
-                                onClick={openDraftModal}
-                                className="flex items-center space-x-2 text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded transition-colors"
-                            >
-                                <Icons.Sparkles size={14} />
-                                <span className="hidden md:inline">一键草稿</span>
-                            </button>
-                        )
-                    )}
                 </div>
             </div>
 
@@ -862,6 +966,19 @@ export const Editor: React.FC = () => {
             <PromptManagerModal
                 isOpen={isPromptManagerOpen}
                 onClose={() => setIsPromptManagerOpen(false)}
+            />
+
+            <CreativeRescueModal
+                isOpen={isCreativeRescueOpen}
+                onClose={() => setIsCreativeRescueOpen(false)}
+                node={node}
+                book={currentBook}
+                onInsertSnippet={insertCreativeSnippet}
+                onApplyDirectionToSummary={(text) => {
+                    if (!text.trim()) return;
+                    void updateNodeSummary(text.trim());
+                    toast.success('已写入节点摘要');
+                }}
             />
 
             <PluginCenterModal
@@ -1182,16 +1299,21 @@ export const Editor: React.FC = () => {
                     onClick={() => setFloatingContextPanel(null)}
                 >
                     <div
-                        className="w-full max-w-5xl h-[86vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
+                        className="w-full max-w-5xl h-[86vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">
-                            <h3 className="text-base font-semibold text-foreground">{getFloatingPanelTitle()}</h3>
+                        <div className="px-6 py-4 border-b border-border bg-card/80 flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                                <h3 className="text-base font-semibold text-foreground">{getFloatingPanelTitle()}</h3>
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                    {getFloatingPanelDescription()}
+                                </p>
+                            </div>
                             <div className="flex items-center gap-2">
                                 {(floatingContextPanel === 'world' || floatingContextPanel === 'characters') && (
                                     <button
                                         onClick={() => setIsSettingsOpen(true)}
-                                        className="px-3 py-1.5 text-xs rounded-md bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                        className="px-3 py-1.5 text-xs rounded-md border border-border bg-secondary text-muted-foreground hover:text-foreground transition-colors"
                                     >
                                         打开设定编辑
                                     </button>
@@ -1206,8 +1328,10 @@ export const Editor: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-5 md:p-6">
-                            {renderFloatingContextContent()}
+                        <div className="flex-1 overflow-y-auto p-5 md:p-6 bg-background/40">
+                            <div className="h-full rounded-2xl border border-border bg-card/70 p-4 md:p-5">
+                                {renderFloatingContextContent()}
+                            </div>
                         </div>
                     </div>
                 </div>
