@@ -3,6 +3,8 @@ import { useStore } from '../store';
 import { Icons } from './Icons';
 import { AIModel } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { useToast } from '../hooks/useToast';
+import { testModelAvailability } from '../services/modelProbe';
 
 interface Props {
     isOpen: boolean;
@@ -11,6 +13,7 @@ interface Props {
 
 export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     const { models, modelConfig, addModel, updateModel, removeModel, updateModelConfig } = useStore();
+    const toast = useToast();
     const [activeTab, setActiveTab] = useState<'models' | 'assignment' | 'creativity'>('models');
 
     // Form State
@@ -19,6 +22,10 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
     const [formKey, setFormKey] = useState('');
     const [formBaseUrl, setFormBaseUrl] = useState('');
     const [formModelName, setFormModelName] = useState('gemini-1.5-flash');
+    const [testingModelId, setTestingModelId] = useState<string | null>(null);
+    const [testMessages, setTestMessages] = useState<Record<string, { type: 'success' | 'error'; text: string }>>({});
+    const [isFormTesting, setIsFormTesting] = useState(false);
+    const [formTestMessage, setFormTestMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     // Ensure creativityLevel exists with defaults
     const creativityLevel = modelConfig.creativityLevel || {
@@ -78,6 +85,7 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         setFormKey(m.apiKey);
         setFormBaseUrl(m.baseUrl || '');
         setFormModelName(m.modelName);
+        setFormTestMessage(null);
     };
 
     const handleNew = () => {
@@ -86,7 +94,17 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         setFormKey('');
         setFormBaseUrl('');
         setFormModelName('gemini-1.5-flash');
+        setFormTestMessage(null);
     };
+
+    const buildDraftModel = (): AIModel => ({
+        id: editingModelId === 'NEW' ? 'NEW' : (editingModelId || 'TEMP'),
+        name: formName.trim() || 'Untitled Model',
+        apiKey: formKey.trim(),
+        baseUrl: formBaseUrl.trim(),
+        modelName: formModelName.trim(),
+        provider: 'google',
+    });
 
     const handleSaveModel = () => {
         const modelData: AIModel = {
@@ -104,6 +122,45 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
             updateModel(modelData);
         }
         setEditingModelId(null);
+    };
+
+    const handleTestExistingModel = async (model: AIModel) => {
+        setTestingModelId(model.id);
+        setTestMessages((prev) => {
+            const next = { ...prev };
+            delete next[model.id];
+            return next;
+        });
+        try {
+            const result = await testModelAvailability(model);
+            const text = `连接成功 · ${result.provider === 'openai' ? 'OpenAI兼容' : 'Gemini'} · ${result.latencyMs}ms`;
+            setTestMessages((prev) => ({ ...prev, [model.id]: { type: 'success', text } }));
+            toast.success(`模型可用：${model.name}`);
+        } catch (error: any) {
+            const text = error?.message || '模型测试失败';
+            setTestMessages((prev) => ({ ...prev, [model.id]: { type: 'error', text } }));
+            toast.error(`模型不可用：${text}`);
+        } finally {
+            setTestingModelId(null);
+        }
+    };
+
+    const handleTestDraftModel = async () => {
+        const model = buildDraftModel();
+        setIsFormTesting(true);
+        setFormTestMessage(null);
+        try {
+            const result = await testModelAvailability(model);
+            const text = `连接成功 · ${result.provider === 'openai' ? 'OpenAI兼容' : 'Gemini'} · ${result.latencyMs}ms`;
+            setFormTestMessage({ type: 'success', text });
+            toast.success(`模型可用：${model.modelName}`);
+        } catch (error: any) {
+            const text = error?.message || '模型测试失败';
+            setFormTestMessage({ type: 'error', text });
+            toast.error(`模型不可用：${text}`);
+        } finally {
+            setIsFormTesting(false);
+        }
     };
 
     const handleDelete = (id: string) => {
@@ -166,9 +223,25 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                         <div className="text-xs text-muted-foreground font-mono mt-1">
                                             {m.modelName} • {m.apiKey ? 'API Key Set' : 'Env Key'}
                                         </div>
+                                        {testMessages[m.id] && (
+                                            <div className={`text-xs mt-1 ${testMessages[m.id].type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                {testMessages[m.id].text}
+                                            </div>
+                                        )}
                                     </div>
                                     {!editingModelId && (
                                         <div className="flex space-x-2 opacity-60 group-hover:opacity-100">
+                                            <button
+                                                onClick={() => handleTestExistingModel(m)}
+                                                className="p-2 hover:bg-secondary rounded text-muted-foreground hover:text-foreground"
+                                                title="测试模型可用性"
+                                                disabled={testingModelId === m.id}
+                                            >
+                                                {testingModelId === m.id
+                                                    ? <Icons.Loader2 size={16} className="animate-spin" />
+                                                    : <Icons.Cpu size={16} />
+                                                }
+                                            </button>
                                             <button onClick={() => handleEdit(m)} className="p-2 hover:bg-secondary rounded text-muted-foreground hover:text-foreground">
                                                 <Icons.Edit size={16} />
                                             </button>
@@ -207,9 +280,24 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                         </div>
                                     </div>
                                     <div className="flex justify-end space-x-2 mt-4">
+                                        <button
+                                            onClick={handleTestDraftModel}
+                                            disabled={isFormTesting}
+                                            className="px-4 py-2 text-sm border border-border rounded text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isFormTesting
+                                                ? <span className="inline-flex items-center"><Icons.Loader2 size={14} className="animate-spin mr-1" /> 测试中</span>
+                                                : '测试模型'
+                                            }
+                                        </button>
                                         <button onClick={() => setEditingModelId(null)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">取消</button>
                                         <button onClick={handleSaveModel} className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90">保存</button>
                                     </div>
+                                    {formTestMessage && (
+                                        <div className={`text-xs mt-3 ${formTestMessage.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {formTestMessage.text}
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
                                 <button onClick={handleNew} className="w-full py-3 border border-dashed border-border rounded-lg text-muted-foreground hover:text-primary hover:border-primary/30 transition-colors flex items-center justify-center">
