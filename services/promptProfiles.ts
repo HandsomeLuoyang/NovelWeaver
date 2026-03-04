@@ -10,6 +10,14 @@ export const PROMPT_TASK_LABEL: Record<PromptTaskType, string> = {
   chat: '对话',
 };
 
+export const PROMPT_REQUIRED_VARIABLES: Record<PromptTaskType, string[]> = {
+  genesis: ['userPrompt'],
+  expansion: ['bookTitle', 'parentTitle', 'childTypeName'],
+  drafting: ['bookTitle', 'hierarchyContext', 'nodeTitle', 'nodeSummary'],
+  polishing: ['bookTitle', 'selection'],
+  chat: ['chatContext', 'dialogue'],
+};
+
 const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
   genesis: {
     systemPrompt: `你是"织梦机"创世引擎。你将灵感种子培育成参天大树。请全程使用中文回答。`,
@@ -75,6 +83,7 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 当前场景细纲: {{nodeSummary}}
 
 === 写作要求 ===
+0. 字数目标：{{draftLengthHint}}
 1. 一致性：严格遵守世界观和角色设定，不要吃书。
 2. 连贯性：紧密承接近期记忆的剧情和文风。
 3. 画面感：使用 Show, don't tell 技法，多描写感官细节。
@@ -97,6 +106,7 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 "{{selection}}"
 
 [任务]
+润色范围: {{polishRangeHint}}
 请重写并润色上述待润色文本。
 要求：
 1. 提升文采，使其更有画面感和感染力。
@@ -126,6 +136,23 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 };
 
 const now = () => Date.now();
+
+export const extractTemplateVariables = (template: string) => {
+  const matches = template.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g) || [];
+  return Array.from(new Set(matches.map((token) => token.replace(/\{\{|\}\}/g, '').trim())));
+};
+
+export const validatePromptTemplate = (
+  task: PromptTaskType,
+  template: { systemPrompt: string; userPrompt: string }
+) => {
+  const used = new Set([
+    ...extractTemplateVariables(template.systemPrompt),
+    ...extractTemplateVariables(template.userPrompt),
+  ]);
+  const required = PROMPT_REQUIRED_VARIABLES[task] || [];
+  return required.filter((variableName) => !used.has(variableName));
+};
 
 const cloneTemplates = (templates: PromptProfile['templates']): PromptProfile['templates'] => {
   return PROMPT_TASKS.reduce((acc, task) => {

@@ -8,9 +8,13 @@ import {
   AITask,
   AITaskStatus,
   AITaskType,
+  AITaskParams,
+  AITaskResult,
   AIUsageEntry,
   EditorTypographySettings,
   PromptProfile,
+  PromptProfileRevision,
+  WritingGoal,
 } from './types';
 import type { Toast } from './hooks/useToast';
 import { DEFAULT_EDITOR_TYPOGRAPHY, sanitizeEditorTypography } from './services/typography';
@@ -35,6 +39,8 @@ interface AppState {
   editorTypography: EditorTypographySettings;
   promptProfiles: PromptProfile[];
   activePromptProfileId: string;
+  promptProfileRevisions: Record<string, PromptProfileRevision[]>;
+  writingGoals: Record<string, WritingGoal>;
 
   // Chat State (Ephemeral)
   chatHistory: Record<string, ChatMessage[]>; // bookId -> messages
@@ -45,6 +51,7 @@ interface AppState {
   isTaskQueueRunning: boolean;
   taskQueueConcurrency: number;
   usageLog: AIUsageEntry[];
+  taskResults: AITaskResult[];
 
   // Actions
   setCurrentBook: (book: Book | null) => void;
@@ -59,13 +66,16 @@ interface AppState {
   clearChatHistory: (bookId: string) => void;
 
   // Queue Actions
-  enqueueTask: (task: { type: AITaskType; bookId: string; nodeId: string; nodeTitle: string }) => void;
+  enqueueTask: (task: { type: AITaskType; bookId: string; nodeId: string; nodeTitle: string; params?: AITaskParams }) => void;
   updateTaskStatus: (taskId: string, status: AITaskStatus, error?: string) => void;
   removeTask: (taskId: string) => void;
   clearCompletedTasks: () => void;
   setTaskQueuePaused: (paused: boolean) => void;
   setTaskQueueRunning: (running: boolean) => void;
   setTaskQueueConcurrency: (concurrency: number) => void;
+  addTaskResult: (result: AITaskResult) => void;
+  removeTaskResult: (resultId: string) => void;
+  clearTaskResults: () => void;
   addUsageEntry: (entry: AIUsageEntry) => void;
   clearUsageLog: () => void;
 
@@ -85,10 +95,23 @@ interface AppState {
   savePromptProfile: (profile: PromptProfile) => void;
   deletePromptProfile: (profileId: string) => void;
   setActivePromptProfile: (profileId: string) => void;
+  importPromptProfiles: (profiles: PromptProfile[], options?: { activateFirst?: boolean }) => string[];
+  rollbackPromptProfile: (profileId: string, revisionId: string) => void;
+  setWritingGoal: (bookId: string, patch: Partial<WritingGoal>) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
 }
 
-type PersistedState = Pick<AppState, 'models' | 'modelConfig' | 'theme' | 'editorTypography' | 'promptProfiles' | 'activePromptProfileId'>;
+type PersistedState = Pick<
+  AppState,
+  'models'
+  | 'modelConfig'
+  | 'theme'
+  | 'editorTypography'
+  | 'promptProfiles'
+  | 'activePromptProfileId'
+  | 'promptProfileRevisions'
+  | 'writingGoals'
+>;
 
 // Default Models
 const defaultModels: AIModel[] = [
@@ -130,6 +153,11 @@ const defaultActivePromptProfileId = defaultPromptProfiles[0]?.id || 'prompt-def
 const SETTINGS_ENDPOINT = '/api/storage/models';
 const TASK_QUEUE_STORAGE_KEY = 'novelweaver-task-queue';
 const AI_USAGE_STORAGE_KEY = 'novelweaver-ai-usage-log';
+const TASK_RESULTS_STORAGE_KEY = 'novelweaver-task-results';
+const MAX_PROMPT_REVISIONS = 20;
+
+const createId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
+const todayKey = () => new Date().toISOString().slice(0, 10);
 
 const readFromLocalStorage = (name: string) => {
   if (typeof window === 'undefined') return null;
@@ -258,9 +286,52 @@ const persistUsageLog = (usageLog: AIUsageEntry[]) => {
 
 const restoredUsageLog = readUsageLog();
 
+const readTaskResults = () => {
+  if (typeof window === 'undefined') return [] as AITaskResult[];
+  const raw = window.localStorage.getItem(TASK_RESULTS_STORAGE_KEY);
+  if (!raw) return [] as AITaskResult[];
+
+  try {
+    const parsed = JSON.parse(raw) as AITaskResult[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('Failed to parse task results cache:', error);
+    return [] as AITaskResult[];
+  }
+};
+
+const persistTaskResults = (results: AITaskResult[]) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(TASK_RESULTS_STORAGE_KEY, JSON.stringify(results.slice(0, 200)));
+};
+
+const restoredTaskResults = readTaskResults();
+
+const normalizePromptRevisions = (
+  revisions: Record<string, PromptProfileRevision[]> | undefined,
+  profiles: PromptProfile[]
+) => {
+  const next: Record<string, PromptProfileRevision[]> = {};
+  if (!revisions) return next;
+
+  const profileIds = new Set(profiles.map((profile) => profile.id));
+  Object.entries(revisions).forEach(([profileId, list]) => {
+    if (!profileIds.has(profileId) || !Array.isArray(list) || list.length === 0) return;
+    next[profileId] = list
+      .filter((item) => item && item.snapshot)
+      .slice(0, MAX_PROMPT_REVISIONS)
+      .map((item) => ({
+        ...item,
+        snapshot: normalizePromptProfile(item.snapshot),
+      }));
+  });
+  return next;
+};
+
 const resolvePromptState = (
   promptProfiles: PromptProfile[] | undefined,
-  activePromptProfileId: string | undefined
+  activePromptProfileId: string | undefined,
+  promptProfileRevisions?: Record<string, PromptProfileRevision[]>
 ) => {
   const normalizedProfiles = normalizePromptProfiles(promptProfiles);
   const hasActive = normalizedProfiles.some((profile) => profile.id === activePromptProfileId);
@@ -270,7 +341,25 @@ const resolvePromptState = (
     activePromptProfileId: hasActive
       ? (activePromptProfileId as string)
       : normalizedProfiles[0]?.id || defaultActivePromptProfileId,
+    promptProfileRevisions: normalizePromptRevisions(promptProfileRevisions, normalizedProfiles),
   };
+};
+
+const resolveWritingGoals = (writingGoals: Record<string, WritingGoal> | undefined) => {
+  if (!writingGoals) return {} as Record<string, WritingGoal>;
+  const next: Record<string, WritingGoal> = {};
+  Object.entries(writingGoals).forEach(([bookId, goal]) => {
+    if (!goal) return;
+    next[bookId] = {
+      bookId,
+      totalTargetWords: Math.max(1000, Number(goal.totalTargetWords || 100000)),
+      dailyTargetWords: Math.max(100, Number(goal.dailyTargetWords || 2000)),
+      targetDate: goal.targetDate,
+      dailyBaselineDate: goal.dailyBaselineDate || todayKey(),
+      dailyBaselineWordCount: Math.max(0, Number(goal.dailyBaselineWordCount || 0)),
+    };
+  });
+  return next;
 };
 
 export const useStore = create<AppState>()(
@@ -288,6 +377,7 @@ export const useStore = create<AppState>()(
       isTaskQueueRunning: false,
       taskQueueConcurrency: restoredTaskQueueState?.taskQueueConcurrency || 1,
       usageLog: restoredUsageLog,
+      taskResults: restoredTaskResults,
       toasts: [],
 
       models: defaultModels,
@@ -295,6 +385,8 @@ export const useStore = create<AppState>()(
       editorTypography: DEFAULT_EDITOR_TYPOGRAPHY,
       promptProfiles: defaultPromptProfiles,
       activePromptProfileId: defaultActivePromptProfileId,
+      promptProfileRevisions: {},
+      writingGoals: {},
       theme: 'system',
 
       setCurrentBook: (book) => set((state) => {
@@ -340,7 +432,7 @@ export const useStore = create<AppState>()(
         const nextQueue: AITask[] = [
           ...state.taskQueue,
           {
-            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${now}-${Math.random()}`,
+            id: createId(),
             ...task,
             status: 'pending' as const,
             createdAt: now,
@@ -380,6 +472,20 @@ export const useStore = create<AppState>()(
         const safeConcurrency = Math.min(3, Math.max(1, Math.round(concurrency)));
         persistTaskQueueSnapshot(state.taskQueue, state.isTaskQueuePaused, safeConcurrency);
         return { taskQueueConcurrency: safeConcurrency };
+      }),
+      addTaskResult: (result) => set((state) => {
+        const next = [result, ...state.taskResults];
+        persistTaskResults(next);
+        return { taskResults: next };
+      }),
+      removeTaskResult: (resultId) => set((state) => {
+        const next = state.taskResults.filter((result) => result.id !== resultId);
+        persistTaskResults(next);
+        return { taskResults: next };
+      }),
+      clearTaskResults: () => set(() => {
+        persistTaskResults([]);
+        return { taskResults: [] };
       }),
       addUsageEntry: (entry) => set((state) => {
         const nextLog = [entry, ...state.usageLog].slice(0, 500);
@@ -426,6 +532,10 @@ export const useStore = create<AppState>()(
           return {
             promptProfiles: normalizePromptProfiles([...state.promptProfiles, created]),
             activePromptProfileId: created.id,
+            promptProfileRevisions: {
+              ...state.promptProfileRevisions,
+              [created.id]: [],
+            },
           };
         });
         return createdId;
@@ -440,11 +550,16 @@ export const useStore = create<AppState>()(
           return {
             promptProfiles: normalizePromptProfiles([...state.promptProfiles, duplicated]),
             activePromptProfileId: duplicated.id,
+            promptProfileRevisions: {
+              ...state.promptProfileRevisions,
+              [duplicated.id]: [],
+            },
           };
         });
         return createdId;
       },
       savePromptProfile: (profile) => set((state) => {
+        const before = state.promptProfiles.find((item) => item.id === profile.id);
         const normalized = normalizePromptProfile({
           ...profile,
           updatedAt: Date.now(),
@@ -454,8 +569,25 @@ export const useStore = create<AppState>()(
           ? state.promptProfiles.map((item) => (item.id === normalized.id ? normalized : item))
           : [...state.promptProfiles, normalized];
 
+        const revisionEntry = before
+          ? {
+              id: createId(),
+              profileId: before.id,
+              createdAt: Date.now(),
+              snapshot: normalizePromptProfile(before),
+            }
+          : null;
+        const existingRevisions = state.promptProfileRevisions[normalized.id] || [];
+        const nextRevisions = revisionEntry
+          ? [revisionEntry, ...existingRevisions].slice(0, MAX_PROMPT_REVISIONS)
+          : existingRevisions;
+
         return {
           promptProfiles: normalizePromptProfiles(nextProfiles),
+          promptProfileRevisions: {
+            ...state.promptProfileRevisions,
+            [normalized.id]: nextRevisions,
+          },
         };
       }),
       deletePromptProfile: (profileId) => set((state) => {
@@ -463,13 +595,89 @@ export const useStore = create<AppState>()(
         if (!target || target.isBuiltin) return {};
 
         const filtered = state.promptProfiles.filter((profile) => profile.id !== profileId);
-        const resolved = resolvePromptState(filtered, state.activePromptProfileId === profileId ? undefined : state.activePromptProfileId);
-        return resolved;
+        const resolved = resolvePromptState(
+          filtered,
+          state.activePromptProfileId === profileId ? undefined : state.activePromptProfileId,
+          state.promptProfileRevisions
+        );
+        return {
+          ...resolved,
+          promptProfileRevisions: Object.fromEntries(
+            Object.entries(resolved.promptProfileRevisions).filter(([id]) => id !== profileId)
+          ),
+        };
       }),
       setActivePromptProfile: (profileId) => set((state) => {
         const exists = state.promptProfiles.some((profile) => profile.id === profileId);
         if (!exists) return {};
         return { activePromptProfileId: profileId };
+      }),
+      importPromptProfiles: (profiles, options) => {
+        const importedIds: string[] = [];
+        set((state) => {
+          const imported = profiles.map((profile) => {
+          const normalized = normalizePromptProfile(profile);
+          const resolvedId = state.promptProfiles.some((existing) => existing.id === normalized.id) ? createId() : normalized.id;
+          importedIds.push(resolvedId);
+          return {
+            ...normalized,
+            id: resolvedId,
+            isBuiltin: false,
+            createdAt: normalized.createdAt || Date.now(),
+            updatedAt: Date.now(),
+          };
+        });
+        const nextProfiles = normalizePromptProfiles([...state.promptProfiles, ...imported]);
+        const activateFirst = options?.activateFirst !== false;
+        return {
+          promptProfiles: nextProfiles,
+          activePromptProfileId: activateFirst && imported[0] ? imported[0].id : state.activePromptProfileId,
+          promptProfileRevisions: imported.reduce((acc, profile) => {
+            acc[profile.id] = [];
+            return acc;
+          }, { ...state.promptProfileRevisions } as Record<string, PromptProfileRevision[]>),
+        };
+        });
+        return importedIds;
+      },
+      rollbackPromptProfile: (profileId, revisionId) => set((state) => {
+        const revisions = state.promptProfileRevisions[profileId] || [];
+        const revision = revisions.find((item) => item.id === revisionId);
+        if (!revision) return {};
+
+        const restored = normalizePromptProfile({
+          ...revision.snapshot,
+          id: profileId,
+          updatedAt: Date.now(),
+        });
+
+        return {
+          promptProfiles: state.promptProfiles.map((profile) => (profile.id === profileId ? restored : profile)),
+        };
+      }),
+      setWritingGoal: (bookId, patch) => set((state) => {
+        const current = state.writingGoals[bookId];
+        const merged: WritingGoal = {
+          bookId,
+          totalTargetWords: Math.max(1000, Number(patch.totalTargetWords || current?.totalTargetWords || 100000)),
+          dailyTargetWords: Math.max(100, Number(patch.dailyTargetWords || current?.dailyTargetWords || 2000)),
+          targetDate: patch.targetDate ?? current?.targetDate,
+          dailyBaselineDate: patch.dailyBaselineDate || current?.dailyBaselineDate || todayKey(),
+          dailyBaselineWordCount: Math.max(
+            0,
+            Number(
+              patch.dailyBaselineWordCount !== undefined
+                ? patch.dailyBaselineWordCount
+                : (current?.dailyBaselineWordCount || 0)
+            )
+          ),
+        };
+        return {
+          writingGoals: {
+            ...state.writingGoals,
+            [bookId]: merged,
+          },
+        };
       }),
       setTheme: (theme) => set({ theme }),
     }),
@@ -478,22 +686,30 @@ export const useStore = create<AppState>()(
       storage: settingsStorage,
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        const resolved = resolvePromptState(state.promptProfiles, state.activePromptProfileId);
+        const resolved = resolvePromptState(state.promptProfiles, state.activePromptProfileId, state.promptProfileRevisions);
         const safeTypography = sanitizeEditorTypography(state.editorTypography || DEFAULT_EDITOR_TYPOGRAPHY);
         state.promptProfiles = resolved.promptProfiles;
         state.activePromptProfileId = resolved.activePromptProfileId;
+        state.promptProfileRevisions = resolved.promptProfileRevisions;
         state.editorTypography = safeTypography;
+        state.writingGoals = resolveWritingGoals(state.writingGoals);
         console.log('Settings rehydrated from local file');
       },
       merge: (persistedState, currentState) => {
         const persisted = (persistedState || {}) as Partial<PersistedState>;
-        const resolved = resolvePromptState(persisted.promptProfiles, persisted.activePromptProfileId);
+        const resolved = resolvePromptState(
+          persisted.promptProfiles,
+          persisted.activePromptProfileId,
+          persisted.promptProfileRevisions
+        );
         return {
           ...currentState,
           ...persisted,
           editorTypography: sanitizeEditorTypography(persisted.editorTypography || currentState.editorTypography),
           promptProfiles: resolved.promptProfiles,
           activePromptProfileId: resolved.activePromptProfileId,
+          promptProfileRevisions: resolved.promptProfileRevisions,
+          writingGoals: resolveWritingGoals(persisted.writingGoals),
         };
       },
       partialize: (state): PersistedState => ({
@@ -503,6 +719,8 @@ export const useStore = create<AppState>()(
         editorTypography: state.editorTypography,
         promptProfiles: state.promptProfiles,
         activePromptProfileId: state.activePromptProfileId,
+        promptProfileRevisions: state.promptProfileRevisions,
+        writingGoals: state.writingGoals,
       }), // Only persist settings
     }
   )

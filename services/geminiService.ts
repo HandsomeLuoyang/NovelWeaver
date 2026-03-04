@@ -76,22 +76,28 @@ const getPromptControls = (task: TaskType, config: TaskRuntimeConfig) => {
   return parts.length > 0 ? `${parts.join('\n\n')}\n` : '';
 };
 
-const getActivePromptProfile = () => {
+interface TaskPromptOptions {
+  promptProfileId?: string;
+}
+
+const getActivePromptProfile = (options?: TaskPromptOptions) => {
   const state = useStore.getState();
   const builtin = createDefaultPromptProfile();
   const profiles = (state.promptProfiles && state.promptProfiles.length > 0)
     ? state.promptProfiles
     : [builtin];
-  return profiles.find((profile) => profile.id === state.activePromptProfileId)
+  const targetProfileId = options?.promptProfileId || state.activePromptProfileId;
+  return profiles.find((profile) => profile.id === targetProfileId)
     || profiles[0]
     || builtin;
 };
 
 const getTaskPrompts = (
   task: TaskType,
-  variables: Record<string, string | number | undefined>
+  variables: Record<string, string | number | undefined>,
+  options?: TaskPromptOptions
 ) => {
-  const profile = getActivePromptProfile();
+  const profile = getActivePromptProfile(options);
   const fallback = createDefaultPromptProfile().templates[task];
   const template = profile.templates?.[task] || fallback;
 
@@ -432,7 +438,8 @@ export const expandNode = async (
   parentNode: StoryNode,
   book: Book,
   childType: NodeType,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { promptProfileId?: string }
 ): Promise<ExpansionResponse> => {
   ensureNotAborted(signal);
   updateStatus(`正在分析节点: ${parentNode.title}...`);
@@ -447,7 +454,7 @@ export const expandNode = async (
     parentTitle: parentNode.title,
     parentSummary: parentNode.summary,
     childTypeName: getNodeTypeName(childType),
-  });
+  }, options);
   const prompt = prompts.userPrompt;
 
   if (config.provider === 'google') {
@@ -519,7 +526,8 @@ export const draftScene = async (
   linearContext: string,
   semanticContext: string,
   onStream: (chunk: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { promptProfileId?: string; draftLengthHint?: string }
 ): Promise<string> => {
   ensureNotAborted(signal);
   updateStatus("正在读取全书大纲与前文记忆...");
@@ -540,7 +548,8 @@ export const draftScene = async (
     semanticContext: semanticContext ? semanticContext : "（未命中高相关历史片段）",
     nodeTitle: node.title,
     nodeSummary: node.summary,
-  });
+    draftLengthHint: options?.draftLengthHint || '中篇幅（约 1000-2000 字）',
+  }, options);
   const prompt = prompts.userPrompt;
 
   if (config.provider === 'google') {
@@ -596,7 +605,8 @@ export const polishText = async (
   context: string,
   book: Book,
   onStream: (chunk: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { promptProfileId?: string; polishRange?: 'selection' | 'scene' }
 ): Promise<string> => {
   ensureNotAborted(signal);
   updateStatus("正在构思润色方案...");
@@ -608,7 +618,8 @@ export const polishText = async (
     worldSettingSnippet: `${book.worldSetting.slice(0, 200)}...`,
     contextSnippet: context.slice(-500),
     selection,
-  });
+    polishRangeHint: options?.polishRange === 'selection' ? '仅润色选中的文本片段' : '润色整段场景文本',
+  }, options);
   const prompt = prompts.userPrompt;
 
   if (config.provider === 'google') {
@@ -663,7 +674,8 @@ export const chat = async (
   history: { role: 'user' | 'assistant' | 'system', content: string }[],
   context: string,
   onStream: (chunk: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { promptProfileId?: string }
 ): Promise<string> => {
   ensureNotAborted(signal);
   // Use chat model for chat as it usually requires decent reasoning
@@ -680,7 +692,7 @@ export const chat = async (
     controls,
     chatContext: context,
     dialogue,
-  });
+  }, options);
 
   const systemMessage = {
     role: 'system' as const,

@@ -115,6 +115,13 @@ export interface PromptProfile {
   templates: Record<PromptTaskType, PromptTemplatePair>;
 }
 
+export interface PromptProfileRevision {
+  id: string;
+  profileId: string;
+  createdAt: number;
+  snapshot: PromptProfile;
+}
+
 export interface ExportData {
   version: number;
   book: Book;
@@ -188,6 +195,17 @@ export interface ChatSession {
 export type AITaskType = 'expansion' | 'draft' | 'polish';
 export type AITaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
+export type AITaskDraftLength = 'short' | 'medium' | 'long';
+export type AITaskPolishRange = 'selection' | 'scene';
+
+export interface AITaskParams {
+  contextLimit?: number;
+  draftLength?: AITaskDraftLength;
+  polishRange?: AITaskPolishRange;
+  selectedText?: string;
+  promptProfileId?: string;
+}
+
 export interface AITask {
   id: string;
   type: AITaskType;
@@ -198,6 +216,48 @@ export interface AITask {
   createdAt: number;
   updatedAt: number;
   error?: string;
+  params?: AITaskParams;
+}
+
+export interface AITaskResult {
+  id: string;
+  taskId: string;
+  type: AITaskType;
+  bookId: string;
+  nodeId: string;
+  nodeTitle: string;
+  createdAt: number;
+  promptProfileId?: string;
+  payload:
+    | {
+        kind: 'expansion';
+        childType: NodeType;
+        nodes: Array<{ title: string; summary: string }>;
+      }
+    | {
+        kind: 'text';
+        mode: 'draft' | 'polish';
+        originalContent: string;
+        generatedContent: string;
+      };
+}
+
+export interface WritingGoal {
+  bookId: string;
+  totalTargetWords: number;
+  dailyTargetWords: number;
+  targetDate?: string;
+  dailyBaselineDate: string;
+  dailyBaselineWordCount: number;
+}
+
+export interface RecoverySnapshot {
+  id: string;
+  createdAt: number;
+  size: number;
+  checksum: string;
+  source: 'auto' | 'manual';
+  payload: string;
 }
 
 export interface AIUsageEntry {

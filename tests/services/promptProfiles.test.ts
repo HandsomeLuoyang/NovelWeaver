@@ -4,6 +4,7 @@ import {
   createDefaultPromptProfile,
   normalizePromptProfiles,
   renderPrompt,
+  validatePromptTemplate,
 } from '../../services/promptProfiles';
 
 describe('promptProfiles utilities', () => {
@@ -38,5 +39,15 @@ describe('promptProfiles utilities', () => {
     expect(cloned.name).toBe('my copy');
     expect(cloned.isBuiltin).toBe(false);
     expect(cloned.templates.genesis.userPrompt).toBe(source.templates.genesis.userPrompt);
+  });
+
+  it('validates missing required variables', () => {
+    const missing = validatePromptTemplate('drafting', {
+      systemPrompt: '你是写作助手',
+      userPrompt: '只保留 {{bookTitle}} 和 {{nodeTitle}}',
+    });
+
+    expect(missing).toContain('hierarchyContext');
+    expect(missing).toContain('nodeSummary');
   });
 });

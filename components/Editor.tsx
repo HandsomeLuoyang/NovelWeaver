@@ -658,6 +658,7 @@ export const Editor: React.FC = () => {
                 isOpen={isTaskQueueOpen}
                 onClose={() => setIsTaskQueueOpen(false)}
                 node={node}
+                selectedText={selectedText}
             />
 
             <ConsistencyCheckModal

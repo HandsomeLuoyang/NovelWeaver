@@ -1,8 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { PromptProfile, PromptTaskType } from '../types';
-import { normalizePromptProfile, PROMPT_TASK_LABEL, PROMPT_TASKS } from '../services/promptProfiles';
+import {
+  normalizePromptProfile,
+  PROMPT_TASK_LABEL,
+  PROMPT_TASKS,
+  validatePromptTemplate,
+} from '../services/promptProfiles';
 import { Icons } from './Icons';
+import { useToast } from '../hooks/useToast';
 
 interface Props {
   isOpen: boolean;
@@ -12,8 +18,8 @@ interface Props {
 const VARIABLE_HINTS: Record<PromptTaskType, string[]> = {
   genesis: ['{{controls}}', '{{userPrompt}}'],
   expansion: ['{{bookTitle}}', '{{parentTitle}}', '{{childTypeName}}', '{{controls}}'],
-  drafting: ['{{hierarchyContext}}', '{{linearContext}}', '{{semanticContext}}', '{{controls}}'],
-  polishing: ['{{selection}}', '{{contextSnippet}}', '{{worldSettingSnippet}}', '{{controls}}'],
+  drafting: ['{{hierarchyContext}}', '{{linearContext}}', '{{semanticContext}}', '{{draftLengthHint}}'],
+  polishing: ['{{selection}}', '{{contextSnippet}}', '{{worldSettingSnippet}}', '{{polishRangeHint}}'],
   chat: ['{{chatContext}}', '{{dialogue}}', '{{controls}}'],
 };
 
@@ -28,25 +34,57 @@ const cloneProfileForEdit = (profile: PromptProfile): PromptProfile => ({
   }, {} as PromptProfile['templates']),
 });
 
+const normalizeImportedProfiles = (raw: unknown): PromptProfile[] => {
+  const payload = raw as any;
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.profiles)
+      ? payload.profiles
+      : payload && typeof payload === 'object'
+        ? [payload]
+        : [];
+
+  return list
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => normalizePromptProfile({
+      id: String(item.id || `${Date.now()}-${Math.random()}`),
+      name: String(item.name || '导入方案'),
+      createdAt: Number(item.createdAt || Date.now()),
+      updatedAt: Number(item.updatedAt || Date.now()),
+      isBuiltin: false,
+      templates: item.templates,
+    }));
+};
+
 export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const {
     promptProfiles,
     activePromptProfileId,
+    promptProfileRevisions,
     createPromptProfile,
     duplicatePromptProfile,
     savePromptProfile,
     deletePromptProfile,
     setActivePromptProfile,
+    importPromptProfiles,
+    rollbackPromptProfile,
   } = useStore();
+  const toast = useToast();
 
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [activeTask, setActiveTask] = useState<PromptTaskType>('genesis');
   const [draftProfile, setDraftProfile] = useState<PromptProfile | null>(null);
   const [dirty, setDirty] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedProfile = useMemo(
     () => promptProfiles.find((profile) => profile.id === selectedProfileId) || promptProfiles[0],
     [promptProfiles, selectedProfileId]
+  );
+
+  const selectedRevisions = useMemo(
+    () => promptProfileRevisions[selectedProfileId] || [],
+    [promptProfileRevisions, selectedProfileId]
   );
 
   useEffect(() => {
@@ -128,6 +166,57 @@ export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
     setActivePromptProfile(profileId);
   };
 
+  const handleExport = () => {
+    if (!selectedProfile) return;
+    const payload = JSON.stringify({ profiles: [selectedProfile] }, null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `prompt-profile-${selectedProfile.name.replace(/\s+/g, '_')}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const profiles = normalizeImportedProfiles(parsed);
+      if (profiles.length === 0) {
+        toast.error('导入失败：未识别到可用提示词方案');
+        return;
+      }
+
+      const importedIds = importPromptProfiles(profiles, { activateFirst: true });
+      if (importedIds[0]) {
+        setSelectedProfileId(importedIds[0]);
+      }
+      toast.success(`已导入 ${profiles.length} 份提示词方案`);
+    } catch (error) {
+      console.error(error);
+      toast.error('导入失败：文件格式错误');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRollback = (revisionId: string) => {
+    if (!selectedProfileId) return;
+    if (!window.confirm('恢复该历史版本会覆盖当前方案，是否继续？')) return;
+
+    rollbackPromptProfile(selectedProfileId, revisionId);
+    setDirty(false);
+    toast.success('已恢复到历史版本');
+  };
+
   const updateDraftName = (name: string) => {
     if (!draftProfile) return;
     setDraftProfile({ ...draftProfile, name });
@@ -150,6 +239,9 @@ export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   const currentTemplate = draftProfile?.templates[activeTask];
+  const missingVariables = currentTemplate
+    ? validatePromptTemplate(activeTask, currentTemplate)
+    : [];
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={handleClose}>
@@ -157,7 +249,8 @@ export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
         className="bg-card border border-border w-full max-w-6xl h-[88vh] rounded-2xl shadow-2xl flex overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <aside className="w-72 border-r border-border bg-secondary/20 flex flex-col">
+        <aside className="w-80 border-r border-border bg-secondary/20 flex flex-col">
+          <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
           <div className="px-4 py-4 border-b border-border flex items-center justify-between">
             <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
               <Icons.FileText size={16} className="text-primary" />
@@ -189,6 +282,21 @@ export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 className="py-2 text-xs rounded border border-destructive/40 text-destructive hover:bg-destructive/10 disabled:opacity-40"
               >
                 删除
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleImportClick}
+                className="py-2 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+              >
+                导入
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={!selectedProfile}
+                className="py-2 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-40"
+              >
+                导出
               </button>
             </div>
           </div>
@@ -268,6 +376,11 @@ export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="text-[11px] text-muted-foreground mb-2">
               可用变量：{VARIABLE_HINTS[activeTask].join('  ')}
             </div>
+            {missingVariables.length > 0 && (
+              <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-600">
+                缺少关键变量：{missingVariables.map((item) => `{{${item}}}`).join('、')}
+              </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-4 scrollbar-thin">
@@ -290,6 +403,27 @@ export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 spellCheck={false}
               />
             </div>
+
+            {selectedRevisions.length > 0 && (
+              <div className="border border-border rounded-lg p-3 bg-secondary/20">
+                <div className="text-xs font-semibold text-foreground mb-2">历史版本（最近 {selectedRevisions.length} 条）</div>
+                <div className="space-y-2 max-h-40 overflow-y-auto scrollbar-thin">
+                  {selectedRevisions.map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-2 text-[11px] border border-border rounded px-2 py-1.5 bg-background/40">
+                      <span className="text-muted-foreground">
+                        {new Date(item.createdAt).toLocaleString()}
+                      </span>
+                      <button
+                        onClick={() => handleRollback(item.id)}
+                        className="px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      >
+                        恢复
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </div>
