@@ -43,3 +43,28 @@ export const moveSceneInColumns = (
 
   return draft;
 };
+
+export const moveScenesInColumns = (
+  columns: SceneColumnData[],
+  sceneIds: string[],
+  fromChapterId: string,
+  toChapterId: string,
+  toIndex: number,
+): SceneColumnData[] => {
+  if (sceneIds.length === 0) return columns;
+
+  let draft = columns;
+  let insertIndex = toIndex;
+
+  sceneIds.forEach((sceneId, order) => {
+    draft = moveSceneInColumns(
+      draft,
+      sceneId,
+      fromChapterId,
+      toChapterId,
+      Math.max(0, insertIndex + order),
+    );
+  });
+
+  return draft;
+};

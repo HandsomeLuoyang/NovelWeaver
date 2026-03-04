@@ -53,6 +53,32 @@ const buildLinearScenes = (nodes: StoryNode[]) => {
   return walk(null);
 };
 
+const extractLexicalKeywords = (text: string) => {
+  const lowered = text.toLowerCase();
+  const tokens = lowered.match(/[\u4e00-\u9fa5]{2,}|[a-z0-9]{3,}/g) || [];
+  return new Set(tokens.slice(0, 120));
+};
+
+const jaccardSimilarity = (a: Set<string>, b: Set<string>) => {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  a.forEach((token) => {
+    if (b.has(token)) intersection += 1;
+  });
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+};
+
+type CharacterState = 'alive' | 'injured' | 'missing' | 'dead';
+
+const detectCharacterState = (text: string): CharacterState | null => {
+  if (/死亡|死去|身亡|尸体|被杀/i.test(text)) return 'dead';
+  if (/失踪|下落不明|消失/i.test(text)) return 'missing';
+  if (/受伤|负伤|流血|重创|昏迷/i.test(text)) return 'injured';
+  if (/康复|痊愈|恢复意识|苏醒|活着/i.test(text)) return 'alive';
+  return null;
+};
+
 export const runConsistencyCheck = (book: Book, nodes: StoryNode[]): ConsistencyFinding[] => {
   const findings: ConsistencyFinding[] = [];
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
@@ -232,6 +258,77 @@ export const runConsistencyCheck = (book: Book, nodes: StoryNode[]): Consistency
         severity: 'medium',
         title: '角色秘密可能提前泄露',
         description: `角色「${name}」的秘密文本疑似已出现在正文中，请确认是否符合你的揭示节奏。`,
+      });
+    }
+  });
+
+  // 8) Character state machine and same-day location drift
+  const lastStateByCharacter = new Map<string, CharacterState>();
+  const dayLocationByCharacter = new Map<string, string>();
+  const locationConflictMemo = new Set<string>();
+  linearScenes.forEach((scene) => {
+    const sceneText = `${scene.title}\n${scene.summary}\n${scene.content || ''}`;
+    const day = extractDayIndex(sceneText);
+    const participants = new Set(scene.meta?.participants || []);
+    book.characters.forEach((character) => {
+      const name = character.name.trim();
+      if (!name) return;
+      if (!participants.has(name) && !sceneText.includes(name)) return;
+
+      const detectedState = detectCharacterState(sceneText);
+      if (detectedState) {
+        const lastState = lastStateByCharacter.get(name);
+        if (lastState === 'dead' && detectedState !== 'dead') {
+          findings.push({
+            id: `char-state-resurrection-${scene.id}-${name}`,
+            severity: 'high',
+            title: '角色状态机疑似冲突',
+            description: `角色「${name}」此前已判定为死亡，但在场景「${scene.title}」中出现了“${detectedState}”状态，请确认是否有复活/回忆设定。`,
+            nodeId: scene.id,
+          });
+        }
+        lastStateByCharacter.set(name, detectedState);
+      }
+
+      if (day !== null && scene.meta?.location) {
+        const dayKey = `${name}::${day}`;
+        const knownLocation = dayLocationByCharacter.get(dayKey);
+        if (!knownLocation) {
+          dayLocationByCharacter.set(dayKey, scene.meta.location);
+        } else if (knownLocation !== scene.meta.location) {
+          const memoKey = `${dayKey}::${knownLocation}::${scene.meta.location}`;
+          if (!locationConflictMemo.has(memoKey)) {
+            locationConflictMemo.add(memoKey);
+            findings.push({
+              id: `char-location-conflict-${scene.id}-${name}`,
+              severity: 'medium',
+              title: '角色同日地点冲突',
+              description: `角色「${name}」在“第 ${day} 天”出现了多个地点（${knownLocation} / ${scene.meta.location}），请确认时间线是否合理。`,
+              nodeId: scene.id,
+            });
+          }
+        }
+      }
+    });
+  });
+
+  // 9) Outline-content alignment check for scene nodes
+  linearScenes.forEach((scene) => {
+    const summary = (scene.summary || '').trim();
+    const content = (scene.content || '').trim();
+    if (summary.length < 20 || content.length < 120) return;
+
+    const summaryTokens = extractLexicalKeywords(summary);
+    const contentTokens = extractLexicalKeywords(content.slice(0, 1200));
+    const score = jaccardSimilarity(summaryTokens, contentTokens);
+
+    if (score < 0.08) {
+      findings.push({
+        id: `outline-drift-${scene.id}`,
+        severity: 'medium',
+        title: '细纲与正文疑似偏离',
+        description: `场景「${scene.title}」的摘要与正文关键词重合度较低（${(score * 100).toFixed(1)}%），建议检查是否跑题。`,
+        nodeId: scene.id,
       });
     }
   });

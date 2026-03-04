@@ -79,4 +79,55 @@ describe('runConsistencyCheck', () => {
     expect(hasPrefix('char-weak-')).toBe(true);
     expect(hasPrefix('secret-leak-')).toBe(true);
   });
+
+  it('detects character state-machine conflicts and outline-content drift', () => {
+    const book = createBook({
+      characters: [
+        { name: 'Alice', role: 'hero', description: '', secret: '' },
+      ],
+    });
+
+    const nodes = [
+      createNode({ id: 'v1', type: 'volume', title: 'V1', order: 0 }),
+      createNode({ id: 'a1', parentId: 'v1', type: 'arc', title: 'A1', order: 0 }),
+      createNode({ id: 'c1', parentId: 'a1', type: 'chapter', title: 'C1', order: 0 }),
+      createNode({
+        id: 's1',
+        parentId: 'c1',
+        type: 'scene',
+        title: 'S1',
+        summary: '第1天 Alice 身亡',
+        status: 'drafted',
+        content: 'Alice 死亡。尸体被带走。'.repeat(20),
+        order: 0,
+        meta: {
+          participants: ['Alice'],
+          location: '旧城区',
+          timeTag: '第1天',
+        },
+      }),
+      createNode({
+        id: 's2',
+        parentId: 'c1',
+        type: 'scene',
+        title: 'S2',
+        summary: '第1天 海底议会就税制改革展开辩论，城市风平浪静',
+        status: 'drafted',
+        content: 'Alice 苏醒后开始追逐嫌犯。'.repeat(30),
+        order: 1,
+        meta: {
+          participants: ['Alice'],
+          location: '中央广场',
+          timeTag: '第1天',
+        },
+      }),
+    ];
+
+    const findings = runConsistencyCheck(book, nodes);
+    const hasPrefix = (prefix: string) => findings.some((finding) => finding.id.startsWith(prefix));
+
+    expect(hasPrefix('char-state-resurrection-')).toBe(true);
+    expect(hasPrefix('char-location-conflict-')).toBe(true);
+    expect(hasPrefix('outline-drift-')).toBe(true);
+  });
 });

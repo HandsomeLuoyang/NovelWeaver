@@ -5,6 +5,7 @@ import { Book } from '../types';
 import { Icons } from './Icons';
 import { evaluatePublishWorkflow, PublishWorkflowReport } from '../services/publishWorkflowService';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useStore } from '../store';
 
 interface PublishWorkflowModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface PublishWorkflowModalProps {
 }
 
 export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOpen, onClose, book }) => {
+  const { setActiveNodeId, expandedNodeIds, toggleNodeExpansion } = useStore();
   const nodes = useLiveQuery(
     async () => {
       if (!isOpen) return [];
@@ -27,6 +29,23 @@ export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOp
 
   if (!isOpen) return null;
   const loading = !nodes;
+
+  const jumpToNode = (nodeId?: string) => {
+    if (!nodeId || !nodes) return;
+
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    setActiveNodeId(nodeId);
+
+    let parentId = nodeMap.get(nodeId)?.parentId || null;
+    while (parentId) {
+      if (!expandedNodeIds.includes(parentId)) {
+        toggleNodeExpansion(parentId);
+      }
+      parentId = nodeMap.get(parentId)?.parentId || null;
+    }
+
+    onClose();
+  };
 
   return createPortal(
     <div className="fixed inset-0 z-[118] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -97,9 +116,22 @@ export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOp
                     </div>
 
                     {stage.blockers.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {stage.blockers.map((blocker, index) => (
-                          <div key={index} className="text-xs text-amber-500">- {blocker}</div>
+                      <div className="mt-2 space-y-2">
+                        {stage.blockers.map((blocker) => (
+                          <div key={blocker.id} className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-2">
+                            <div className="text-xs text-amber-600">- {blocker.message}</div>
+                            {blocker.suggestion && (
+                              <div className="text-[11px] text-muted-foreground mt-1">建议：{blocker.suggestion}</div>
+                            )}
+                            {blocker.nodeId && (
+                              <button
+                                onClick={() => jumpToNode(blocker.nodeId)}
+                                className="mt-2 px-2.5 py-1 text-[11px] rounded bg-primary/10 text-primary hover:bg-primary/20"
+                              >
+                                定位并修复
+                              </button>
+                            )}
+                          </div>
                         ))}
                       </div>
                     )}
