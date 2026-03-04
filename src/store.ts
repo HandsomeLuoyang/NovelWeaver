@@ -128,30 +128,33 @@ type PersistedState = Pick<
   | 'writingGoals'
 >;
 
-// Default Models
-const defaultModels: AIModel[] = [
+const MODEL_ASSIGNMENT_KEYS = [
+  'genesisModelId',
+  'expansionModelId',
+  'draftingModelId',
+  'polishingModelId',
+  'chatModelId',
+] as const;
+
+type ModelAssignmentKey = (typeof MODEL_ASSIGNMENT_KEYS)[number];
+
+// Initial sample model (fully user editable/removable)
+const initialModels: AIModel[] = [
   {
-    id: 'default-pro',
-    name: 'Gemini 1.5 Pro (System)',
+    id: 'sample-gemini-flash',
+    name: '示例模型（可编辑）',
     provider: 'google',
     apiKey: '', // Empty implies using .env.local (VITE_GEMINI_API_KEY / VITE_API_KEY)
-    modelName: 'gemini-1.5-pro'
-  },
-  {
-    id: 'default-flash',
-    name: 'Gemini 1.5 Flash (System)',
-    provider: 'google',
-    apiKey: '',
     modelName: 'gemini-1.5-flash'
   }
 ];
 
 const defaultConfig: ModelConfig = {
-  genesisModelId: 'default-pro',
-  expansionModelId: 'default-pro',
-  draftingModelId: 'default-flash',
-  polishingModelId: 'default-flash',
-  chatModelId: 'default-flash',
+  genesisModelId: 'sample-gemini-flash',
+  expansionModelId: 'sample-gemini-flash',
+  draftingModelId: 'sample-gemini-flash',
+  polishingModelId: 'sample-gemini-flash',
+  chatModelId: 'sample-gemini-flash',
   creativityLevel: {
     genesis: 0.9,
     expansion: 0.8,
@@ -399,6 +402,38 @@ const resolveModelConfig = (modelConfig: ModelConfig | undefined) => {
   } as ModelConfig;
 };
 
+const sanitizeModels = (models: AIModel[] | undefined): AIModel[] => {
+  if (!Array.isArray(models)) return [...initialModels];
+  if (models.length === 0) return [];
+  return models.filter((model) => model && model.id && model.name && model.modelName);
+};
+
+const resolveModelConfigWithModels = (
+  models: AIModel[],
+  modelConfig: ModelConfig | undefined
+): ModelConfig => {
+  const safeConfig = resolveModelConfig(modelConfig);
+  const availableIds = new Set(models.map((model) => model.id));
+  const fallbackModelId = models[0]?.id || '';
+  const nextConfig = { ...safeConfig } as ModelConfig;
+
+  MODEL_ASSIGNMENT_KEYS.forEach((key: ModelAssignmentKey) => {
+    if (!availableIds.has(nextConfig[key])) {
+      nextConfig[key] = fallbackModelId;
+    }
+  });
+
+  return nextConfig;
+};
+
+const resolveModelState = (models: AIModel[] | undefined, modelConfig: ModelConfig | undefined) => {
+  const safeModels = sanitizeModels(models);
+  return {
+    models: safeModels,
+    modelConfig: resolveModelConfigWithModels(safeModels, modelConfig),
+  };
+};
+
 export const useStore = create<AppState>()(
   persist<AppState, [], [], PersistedState>(
     (set) => ({
@@ -417,7 +452,7 @@ export const useStore = create<AppState>()(
       taskResults: restoredTaskResults,
       toasts: [],
 
-      models: defaultModels,
+      models: initialModels,
       modelConfig: defaultConfig,
       editorTypography: DEFAULT_EDITOR_TYPOGRAPHY,
       promptProfiles: defaultPromptProfiles,
@@ -539,15 +574,25 @@ export const useStore = create<AppState>()(
       addToast: (toast) => set((state) => ({ toasts: [...state.toasts, toast] })),
       removeToast: (id) => set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) })),
 
-      addModel: (model) => set((state) => ({ models: [...state.models, model] })),
+      addModel: (model) => set((state) => {
+        const nextModels = [...state.models, model];
+        return {
+          models: nextModels,
+          modelConfig: resolveModelConfigWithModels(nextModels, state.modelConfig),
+        };
+      }),
       updateModel: (updatedModel) => set((state) => ({
         models: state.models.map(m => m.id === updatedModel.id ? updatedModel : m)
       })),
-      removeModel: (id) => set((state) => ({
-        models: state.models.filter(m => m.id !== id)
-      })),
+      removeModel: (id) => set((state) => {
+        const nextModels = state.models.filter((m) => m.id !== id);
+        return {
+          models: nextModels,
+          modelConfig: resolveModelConfigWithModels(nextModels, state.modelConfig),
+        };
+      }),
       updateModelConfig: (cfg) => set((state) => ({
-        modelConfig: resolveModelConfig({
+        modelConfig: resolveModelConfigWithModels(state.models, {
           ...state.modelConfig,
           ...cfg
         })
@@ -737,7 +782,9 @@ export const useStore = create<AppState>()(
         state.promptProfileRevisions = resolved.promptProfileRevisions;
         state.editorTypography = safeTypography;
         state.writingGoals = resolveWritingGoals(state.writingGoals);
-        state.modelConfig = resolveModelConfig(state.modelConfig);
+        const resolvedModels = resolveModelState(state.models, state.modelConfig);
+        state.models = resolvedModels.models;
+        state.modelConfig = resolvedModels.modelConfig;
         state.lightThemeVariant = sanitizeLightThemeVariant(state.lightThemeVariant);
         state.darkThemeVariant = sanitizeDarkThemeVariant(state.darkThemeVariant);
         console.log('Settings rehydrated from local file');
@@ -749,11 +796,17 @@ export const useStore = create<AppState>()(
           persisted.activePromptProfileId,
           persisted.promptProfileRevisions
         );
+        const resolvedModels = resolveModelState(
+          persisted.models,
+          persisted.modelConfig || currentState.modelConfig
+        );
+
         return {
           ...currentState,
           ...persisted,
           editorTypography: sanitizeEditorTypography(persisted.editorTypography || currentState.editorTypography),
-          modelConfig: resolveModelConfig(persisted.modelConfig || currentState.modelConfig),
+          models: resolvedModels.models,
+          modelConfig: resolvedModels.modelConfig,
           promptProfiles: resolved.promptProfiles,
           activePromptProfileId: resolved.activePromptProfileId,
           promptProfileRevisions: resolved.promptProfileRevisions,

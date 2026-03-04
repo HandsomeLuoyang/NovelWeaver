@@ -140,6 +140,10 @@ const getTaskPrompts = (
 // Helper to get configuration
 const getConfigForTask = (task: TaskType): TaskRuntimeConfig => {
   const state = useStore.getState();
+  if (!state.models || state.models.length === 0) {
+    throw new Error('请先在 AI 模型中控台添加并配置一个模型。');
+  }
+
   const config = state.modelConfig;
   const creativityProfile = config.creativityLevel || DEFAULT_CREATIVITY;
 
@@ -153,6 +157,9 @@ const getConfigForTask = (task: TaskType): TaskRuntimeConfig => {
   }
 
   const modelDef = state.models.find(m => m.id === modelId) || state.models[0];
+  if (!modelDef) {
+    throw new Error('未找到可用模型，请先在 AI 模型中控台添加模型。');
+  }
 
   let finalModelName = modelDef.modelName;
   let provider = modelDef.provider;
