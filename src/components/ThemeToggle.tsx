@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Monitor, Moon, Palette, Sun } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../store';
 import {
     DARK_THEME_OPTIONS,
@@ -17,12 +18,34 @@ export const ThemeToggle: React.FC = () => {
         setDarkThemeVariant,
     } = useStore();
     const containerRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
     const [isOpen, setIsOpen] = useState(false);
-    const [prefersDark, setPrefersDark] = useState<boolean>(() => (
-        typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-    ));
+    const [prefersDark, setPrefersDark] = useState<boolean>(() => {
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+        return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    });
+    const [panelPosition, setPanelPosition] = useState<{ top: number; left: number; width: number }>({
+        top: 0,
+        left: 0,
+        width: 360,
+    });
+
+    const updatePanelPosition = () => {
+        if (!triggerRef.current) return;
+        const rect = triggerRef.current.getBoundingClientRect();
+        const width = 360;
+        const viewportPadding = 12;
+        const proposedLeft = rect.right - width;
+        const minLeft = viewportPadding;
+        const maxLeft = window.innerWidth - width - viewportPadding;
+        const left = Math.max(minLeft, Math.min(proposedLeft, maxLeft));
+        const top = rect.bottom + 8;
+        setPanelPosition({ top, left, width });
+    };
 
     useEffect(() => {
+        if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
         const media = window.matchMedia('(prefers-color-scheme: dark)');
         const update = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
         setPrefersDark(media.matches);
@@ -39,19 +62,28 @@ export const ThemeToggle: React.FC = () => {
     useEffect(() => {
         if (!isOpen) return;
 
+        updatePanelPosition();
+
         const handlePointerDown = (event: MouseEvent) => {
-            if (containerRef.current?.contains(event.target as Node)) return;
+            const target = event.target as Node;
+            if (containerRef.current?.contains(target)) return;
+            if (panelRef.current?.contains(target)) return;
             setIsOpen(false);
         };
         const handleEscape = (event: KeyboardEvent) => {
             if (event.key === 'Escape') setIsOpen(false);
         };
+        const handleLayout = () => updatePanelPosition();
 
         document.addEventListener('mousedown', handlePointerDown);
         document.addEventListener('keydown', handleEscape);
+        window.addEventListener('resize', handleLayout);
+        window.addEventListener('scroll', handleLayout, true);
         return () => {
             document.removeEventListener('mousedown', handlePointerDown);
             document.removeEventListener('keydown', handleEscape);
+            window.removeEventListener('resize', handleLayout);
+            window.removeEventListener('scroll', handleLayout, true);
         };
     }, [isOpen]);
 
@@ -77,6 +109,7 @@ export const ThemeToggle: React.FC = () => {
         <div className="relative" ref={containerRef}>
             <button
                 type="button"
+                ref={triggerRef}
                 onClick={() => setIsOpen((open) => !open)}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border text-sm text-foreground hover:border-primary/50 transition-colors"
                 title="主题与配色"
@@ -85,8 +118,12 @@ export const ThemeToggle: React.FC = () => {
                 <span>主题</span>
             </button>
 
-            {isOpen && (
-                <div className="absolute right-0 mt-2 w-[360px] rounded-2xl border border-border bg-card shadow-2xl p-4 z-40 space-y-4">
+            {isOpen && typeof document !== 'undefined' && createPortal(
+                <div
+                    ref={panelRef}
+                    className="fixed rounded-2xl border border-border bg-card shadow-2xl p-4 z-[1000] space-y-4"
+                    style={{ top: panelPosition.top, left: panelPosition.left, width: panelPosition.width }}
+                >
                     <div className="space-y-2">
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">显示模式</p>
                         <div className="flex items-center gap-2">
@@ -183,7 +220,8 @@ export const ThemeToggle: React.FC = () => {
                             ))}
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
