@@ -17,10 +17,10 @@ interface Props {
 
 const VARIABLE_HINTS: Record<PromptTaskType, string[]> = {
   genesis: ['{{controls}}', '{{userPrompt}}'],
-  expansion: ['{{bookTitle}}', '{{parentTitle}}', '{{childTypeName}}', '{{controls}}'],
-  drafting: ['{{hierarchyContext}}', '{{linearContext}}', '{{semanticContext}}', '{{draftLengthHint}}'],
-  polishing: ['{{selection}}', '{{contextSnippet}}', '{{worldSettingSnippet}}', '{{polishRangeHint}}'],
-  chat: ['{{chatContext}}', '{{dialogue}}', '{{controls}}'],
+  expansion: ['{{bookTitle}}', '{{parentTitle}}', '{{childTypeName}}', '{{factHardConstraints}}', '{{factSoftContext}}', '{{controls}}'],
+  drafting: ['{{hierarchyContext}}', '{{linearContext}}', '{{semanticContext}}', '{{draftLengthHint}}', '{{creativeModeHint}}', '{{antiBlockHint}}', '{{factHardConstraints}}', '{{factSoftContext}}'],
+  polishing: ['{{selection}}', '{{contextSnippet}}', '{{worldSettingSnippet}}', '{{polishRangeHint}}', '{{factSummary}}', '{{factHardConstraints}}'],
+  chat: ['{{chatContext}}', '{{dialogue}}', '{{factHardConstraints}}', '{{factSoftContext}}', '{{controls}}'],
 };
 
 const cloneProfileForEdit = (profile: PromptProfile): PromptProfile => ({

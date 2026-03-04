@@ -105,4 +105,43 @@ describe('evaluatePublishWorkflow', () => {
     expect(draftStage?.blockers[0]?.nodeId).toBe('s1');
     expect(draftStage?.blockers[0]?.suggestion).toContain('建议优先补写');
   });
+
+  it('includes locked-fact conflicts in review blockers', () => {
+    const book = createBook();
+    const nodes = [
+      createNode({ id: 'v1', type: 'volume', title: 'V1', order: 0 }),
+      createNode({ id: 'a1', parentId: 'v1', type: 'arc', title: 'A1', order: 0 }),
+      createNode({ id: 'c1', parentId: 'a1', type: 'chapter', title: 'C1', order: 0 }),
+      createNode({
+        id: 's1',
+        parentId: 'c1',
+        type: 'scene',
+        title: 'S1',
+        summary: '冲突',
+        status: 'drafted',
+        content: '林秋并不是霜港治安官。'.repeat(30),
+        order: 0,
+        meta: { pov: '林秋', location: '霜港', participants: ['林秋'] },
+      }),
+    ];
+    const facts = [{
+      id: 'f1',
+      bookId: book.id,
+      category: 'character' as const,
+      statement: '林秋是霜港治安官',
+      notes: '',
+      tags: [],
+      reliability: 'confirmed' as const,
+      locked: true,
+      status: 'active' as const,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }];
+
+    const report = evaluatePublishWorkflow(book, nodes, facts);
+    const reviewStage = report.stages.find((stage) => stage.id === 'review');
+
+    expect(reviewStage?.passed).toBe(false);
+    expect(reviewStage?.blockers.some((blocker) => blocker.message.includes('锁定事实'))).toBe(true);
+  });
 });

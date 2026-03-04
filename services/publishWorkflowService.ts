@@ -1,4 +1,4 @@
-import { Book, StoryNode } from '../types';
+import { Book, FactEntry, StoryNode } from '../types';
 import { runConsistencyCheck } from './consistencyService';
 
 export interface PublishBlocker {
@@ -31,8 +31,8 @@ export interface PublishWorkflowReport {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-export const evaluatePublishWorkflow = (book: Book, nodes: StoryNode[]): PublishWorkflowReport => {
-  const findings = runConsistencyCheck(book, nodes);
+export const evaluatePublishWorkflow = (book: Book, nodes: StoryNode[], facts: FactEntry[] = []): PublishWorkflowReport => {
+  const findings = runConsistencyCheck(book, nodes, facts);
   const high = findings.filter((finding) => finding.severity === 'high').length;
   const medium = findings.filter((finding) => finding.severity === 'medium').length;
   const low = findings.filter((finding) => finding.severity === 'low').length;

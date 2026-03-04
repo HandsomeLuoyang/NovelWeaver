@@ -56,6 +56,12 @@ const App: React.FC = () => {
     const deletedNodesCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
     const deletedNodesUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
     const deletedNodesDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const factsCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const factsUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const factsDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const factCandidatesCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const factCandidatesUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const factCandidatesDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
 
     // Keep disk as source-of-truth by hydrating from disk snapshot first.
     const initPersistence = async () => {
@@ -84,6 +90,12 @@ const App: React.FC = () => {
     db.deletedNodes.hook('creating', deletedNodesCreatingHook);
     db.deletedNodes.hook('updating', deletedNodesUpdatingHook);
     db.deletedNodes.hook('deleting', deletedNodesDeletingHook);
+    db.facts.hook('creating', factsCreatingHook);
+    db.facts.hook('updating', factsUpdatingHook);
+    db.facts.hook('deleting', factsDeletingHook);
+    db.factCandidates.hook('creating', factCandidatesCreatingHook);
+    db.factCandidates.hook('updating', factCandidatesUpdatingHook);
+    db.factCandidates.hook('deleting', factCandidatesDeletingHook);
 
     // Auto-save every 30 seconds
     const interval = window.setInterval(() => {
@@ -124,6 +136,12 @@ const App: React.FC = () => {
       db.deletedNodes.hook('creating').unsubscribe(deletedNodesCreatingHook);
       db.deletedNodes.hook('updating').unsubscribe(deletedNodesUpdatingHook);
       db.deletedNodes.hook('deleting').unsubscribe(deletedNodesDeletingHook);
+      db.facts.hook('creating').unsubscribe(factsCreatingHook);
+      db.facts.hook('updating').unsubscribe(factsUpdatingHook);
+      db.facts.hook('deleting').unsubscribe(factsDeletingHook);
+      db.factCandidates.hook('creating').unsubscribe(factCandidatesCreatingHook);
+      db.factCandidates.hook('updating').unsubscribe(factCandidatesUpdatingHook);
+      db.factCandidates.hook('deleting').unsubscribe(factCandidatesDeletingHook);
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);

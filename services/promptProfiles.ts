@@ -12,10 +12,10 @@ export const PROMPT_TASK_LABEL: Record<PromptTaskType, string> = {
 
 export const PROMPT_REQUIRED_VARIABLES: Record<PromptTaskType, string[]> = {
   genesis: ['userPrompt'],
-  expansion: ['bookTitle', 'parentTitle', 'childTypeName'],
-  drafting: ['bookTitle', 'hierarchyContext', 'nodeTitle', 'nodeSummary'],
-  polishing: ['bookTitle', 'selection'],
-  chat: ['chatContext', 'dialogue'],
+  expansion: ['bookTitle', 'parentTitle', 'childTypeName', 'factHardConstraints'],
+  drafting: ['bookTitle', 'hierarchyContext', 'nodeTitle', 'nodeSummary', 'factHardConstraints', 'creativeModeHint', 'antiBlockHint'],
+  polishing: ['bookTitle', 'selection', 'factHardConstraints'],
+  chat: ['chatContext', 'dialogue', 'factHardConstraints'],
 };
 
 const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
@@ -50,6 +50,10 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 当前标题: {{parentTitle}}
 当前剧情梗概: {{parentSummary}}
 
+[事实库约束]
+{{factHardConstraints}}
+{{factSoftContext}}
+
 [任务]
 请将上述 "{{parentTitle}}" 拆解扩写为 5-10 个 "{{childTypeName}}" (子节点)。
 
@@ -69,6 +73,10 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 世界观设定: {{worldSetting}}
 主要角色表: {{charactersJson}}
 
+=== 事实库约束 (Fact Bible) ===
+{{factHardConstraints}}
+{{factSoftContext}}
+
 === 2. 剧情脉络 (Structural Context) ===
 {{hierarchyContext}}
 
@@ -84,6 +92,8 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 
 === 写作要求 ===
 0. 字数目标：{{draftLengthHint}}
+0.1 创作模式：{{creativeModeHint}}
+0.2 防卡文策略：{{antiBlockHint}}
 1. 一致性：严格遵守世界观和角色设定，不要吃书。
 2. 连贯性：紧密承接近期记忆的剧情和文风。
 3. 画面感：使用 Show, don't tell 技法，多描写感官细节。
@@ -98,6 +108,10 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 [背景信息]
 书名: {{bookTitle}}
 世界观风格: {{worldSettingSnippet}}
+事实库摘要: {{factSummary}}
+
+[锁定事实]
+{{factHardConstraints}}
 
 [上下文片段]
 {{contextSnippet}}
@@ -125,6 +139,10 @@ const DEFAULT_TEMPLATES: PromptProfile['templates'] = {
 
 [当前上下文]
 {{chatContext}}
+
+[事实库约束]
+{{factHardConstraints}}
+{{factSoftContext}}
 
 请用简洁、有帮助的语气回答。如果用户让你写一段内容，请保持与当前文风一致。`,
     userPrompt: `[对话历史]

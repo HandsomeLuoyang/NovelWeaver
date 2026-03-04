@@ -34,9 +34,12 @@ export const ConsistencyCheckModal: React.FC<ConsistencyCheckModalProps> = ({ is
     const run = async () => {
       setLoading(true);
       try {
-        const nodes = await db.nodes.where('bookId').equals(currentBook.id).toArray();
+        const [nodes, facts] = await Promise.all([
+          db.nodes.where('bookId').equals(currentBook.id).toArray(),
+          db.facts.where('bookId').equals(currentBook.id).toArray(),
+        ]);
         setAllNodes(nodes);
-        const result = runConsistencyCheck(currentBook, nodes);
+        const result = runConsistencyCheck(currentBook, nodes, facts);
         setFindings(result);
       } finally {
         setLoading(false);

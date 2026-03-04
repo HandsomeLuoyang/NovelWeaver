@@ -2,11 +2,13 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { Book, StoryNode, NodeType, PromptTaskType } from '../types';
 import { GenesisResponse, ExpansionResponse, GenesisResponseSchema, ExpansionResponseSchema } from '../schemas';
 import { useStore } from '../store';
+import { db } from '../db';
 import {
   buildOpenAIChatCompletionsUrl,
   formatOpenAINetworkError,
 } from './openaiCompat';
 import { createDefaultPromptProfile, renderPrompt } from './promptProfiles';
+import { buildFactPromptContext } from './factLibrary';
 
 // Type definitions for internal task identification
 type TaskType = PromptTaskType;
@@ -25,6 +27,12 @@ interface TaskRuntimeConfig {
   temperature: number;
   enableQualityCheck: boolean;
   enableCreativitySeeds: boolean;
+  creativeToolkit: {
+    antiBlockMode: boolean;
+    divergenceBoost: number;
+    twistIntensity: number;
+    paceVariance: number;
+  };
 }
 
 const DEFAULT_CREATIVITY: CreativityProfile = {
@@ -73,11 +81,33 @@ const getPromptControls = (task: TaskType, config: TaskRuntimeConfig) => {
     );
   }
 
+  if (task !== 'genesis') {
+    parts.push(
+      `[创意控制参数]\n发散度=${config.creativeToolkit.divergenceBoost.toFixed(2)}; 反转强度=${config.creativeToolkit.twistIntensity.toFixed(2)}; 节奏波动=${config.creativeToolkit.paceVariance.toFixed(2)}。`
+    );
+  }
+
+  if (config.creativeToolkit.antiBlockMode && (task === 'drafting' || task === 'expansion' || task === 'chat')) {
+    parts.push(
+      `[防卡文规则]\n请在结果中确保“至少一个推进动作 + 一个冲突升级点 + 一个下一步悬念钩子”，避免剧情原地踏步。`
+    );
+  }
+
   return parts.length > 0 ? `${parts.join('\n\n')}\n` : '';
 };
 
 interface TaskPromptOptions {
   promptProfileId?: string;
+}
+
+export interface InspirationPack {
+  direction: string;
+  nextBeats: string[];
+  conflictEscalations: string[];
+  twists: string[];
+  dialogueHooks: string[];
+  sensoryAnchors: string[];
+  cliffhangers: string[];
 }
 
 const getActivePromptProfile = (options?: TaskPromptOptions) => {
@@ -159,11 +189,30 @@ const getConfigForTask = (task: TaskType): TaskRuntimeConfig => {
     temperature: resolveTaskTemperature(task, creativityProfile),
     enableQualityCheck: Boolean(config.enableQualityCheck),
     enableCreativitySeeds: Boolean(config.enableCreativitySeeds),
+    creativeToolkit: {
+      antiBlockMode: Boolean(config.creativeToolkit?.antiBlockMode ?? true),
+      divergenceBoost: Math.max(0, Math.min(1, Number(config.creativeToolkit?.divergenceBoost ?? 0.65))),
+      twistIntensity: Math.max(0, Math.min(1, Number(config.creativeToolkit?.twistIntensity ?? 0.55))),
+      paceVariance: Math.max(0, Math.min(1, Number(config.creativeToolkit?.paceVariance ?? 0.5))),
+    },
   };
 };
 
 const updateStatus = (status: string) => {
   useStore.getState().setGenerationStatus(status);
+};
+
+const EMPTY_FACT_CONTEXT = buildFactPromptContext([]);
+
+const getFactContextForBook = async (bookId?: string) => {
+  if (!bookId) return EMPTY_FACT_CONTEXT;
+  try {
+    const facts = await db.facts.where('bookId').equals(bookId).toArray();
+    return buildFactPromptContext(facts);
+  } catch (error) {
+    console.error('Failed to load fact context:', error);
+    return EMPTY_FACT_CONTEXT;
+  }
 };
 
 const estimatePricePer1kTokens = (provider: 'google' | 'openai', modelName: string) => {
@@ -445,6 +494,7 @@ export const expandNode = async (
   updateStatus(`正在分析节点: ${parentNode.title}...`);
   const config = getConfigForTask('expansion');
   const controls = getPromptControls('expansion', config);
+  const factContext = await getFactContextForBook(book.id);
   const prompts = getTaskPrompts('expansion', {
     controls,
     bookTitle: book.title,
@@ -454,8 +504,12 @@ export const expandNode = async (
     parentTitle: parentNode.title,
     parentSummary: parentNode.summary,
     childTypeName: getNodeTypeName(childType),
+    factSummary: factContext.factSummary,
+    factHardConstraints: factContext.factHardConstraints,
+    factSoftContext: factContext.factSoftContext,
   }, options);
   const prompt = prompts.userPrompt;
+  const expansionSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -484,7 +538,7 @@ export const expandNode = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
-        systemInstruction: prompts.systemPrompt,
+        systemInstruction: expansionSystemPrompt,
         temperature: config.temperature,
       },
     } as any);
@@ -499,7 +553,7 @@ export const expandNode = async (
     const messages = [
       {
         role: 'system',
-        content: `${prompts.systemPrompt}\n请返回 JSON 格式：{ \"nodes\": [{ \"title\": \"...\", \"summary\": \"...\" }] }`
+        content: `${expansionSystemPrompt}\n请返回 JSON 格式：{ \"nodes\": [{ \"title\": \"...\", \"summary\": \"...\" }] }`
       },
       { role: 'user', content: prompt }
     ];
@@ -527,12 +581,13 @@ export const draftScene = async (
   semanticContext: string,
   onStream: (chunk: string) => void,
   signal?: AbortSignal,
-  options?: { promptProfileId?: string; draftLengthHint?: string }
+  options?: { promptProfileId?: string; draftLengthHint?: string; creativeModeHint?: string; antiBlockHint?: string }
 ): Promise<string> => {
   ensureNotAborted(signal);
   updateStatus("正在读取全书大纲与前文记忆...");
   const config = getConfigForTask('drafting');
   const controls = getPromptControls('drafting', config);
+  const factContext = await getFactContextForBook(book.id);
 
   const hierarchyContext = ancestors.length > 0
     ? ancestors.map(a => `[${getNodeTypeName(a.type)}: ${a.title}]\n梗概: ${a.summary}`).join('\n\n')
@@ -549,8 +604,14 @@ export const draftScene = async (
     nodeTitle: node.title,
     nodeSummary: node.summary,
     draftLengthHint: options?.draftLengthHint || '中篇幅（约 1000-2000 字）',
+    creativeModeHint: options?.creativeModeHint || '平衡推进（剧情与文风并重）',
+    antiBlockHint: options?.antiBlockHint || '若出现卡文风险，请优先推进行动线并抛出新问题',
+    factSummary: factContext.factSummary,
+    factHardConstraints: factContext.factHardConstraints,
+    factSoftContext: factContext.factSoftContext,
   }, options);
   const prompt = prompts.userPrompt;
+  const draftingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -560,7 +621,7 @@ export const draftScene = async (
       model: config.modelName,
       contents: prompt,
       config: {
-        systemInstruction: prompts.systemPrompt,
+        systemInstruction: draftingSystemPrompt,
         temperature: config.temperature
       },
       ...(signal ? { signal } : {}),
@@ -582,7 +643,7 @@ export const draftScene = async (
     // OpenAI Logic
     updateStatus(`正在使用 ${config.modelName} (OpenAI) 编织文字...`);
     const messages = [
-      { role: 'system', content: prompts.systemPrompt },
+      { role: 'system', content: draftingSystemPrompt },
       { role: 'user', content: prompt }
     ];
 
@@ -612,6 +673,7 @@ export const polishText = async (
   updateStatus("正在构思润色方案...");
   const config = getConfigForTask('polishing');
   const controls = getPromptControls('polishing', config);
+  const factContext = await getFactContextForBook(book.id);
   const prompts = getTaskPrompts('polishing', {
     controls,
     bookTitle: book.title,
@@ -619,8 +681,12 @@ export const polishText = async (
     contextSnippet: context.slice(-500),
     selection,
     polishRangeHint: options?.polishRange === 'selection' ? '仅润色选中的文本片段' : '润色整段场景文本',
+    factSummary: factContext.factSummary,
+    factHardConstraints: factContext.factHardConstraints,
+    factSoftContext: factContext.factSoftContext,
   }, options);
   const prompt = prompts.userPrompt;
+  const polishingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -630,7 +696,7 @@ export const polishText = async (
       model: config.modelName,
       contents: prompt,
       config: {
-        systemInstruction: prompts.systemPrompt,
+        systemInstruction: polishingSystemPrompt,
         temperature: config.temperature
       },
       ...(signal ? { signal } : {}),
@@ -652,7 +718,7 @@ export const polishText = async (
     // OpenAI Logic
     updateStatus(`使用 ${config.modelName} (OpenAI) 逐字推敲...`);
     const messages = [
-      { role: 'system', content: prompts.systemPrompt },
+      { role: 'system', content: polishingSystemPrompt },
       { role: 'user', content: prompt }
     ];
 
@@ -681,6 +747,8 @@ export const chat = async (
   // Use chat model for chat as it usually requires decent reasoning
   const config = getConfigForTask('chat');
   const controls = getPromptControls('chat', config);
+  const currentBook = useStore.getState().currentBook;
+  const factContext = await getFactContextForBook(currentBook?.id);
   const dialogue = history
     .map((msg) => {
       if (msg.role === 'assistant') return `助手: ${msg.content}`;
@@ -692,11 +760,14 @@ export const chat = async (
     controls,
     chatContext: context,
     dialogue,
+    factSummary: factContext.factSummary,
+    factHardConstraints: factContext.factHardConstraints,
+    factSoftContext: factContext.factSoftContext,
   }, options);
 
   const systemMessage = {
     role: 'system' as const,
-    content: prompts.systemPrompt,
+    content: `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`,
   };
 
   if (config.provider === 'google') {
@@ -741,4 +812,129 @@ export const chat = async (
     recordUsage('chat', config, messages.map((msg) => msg.content).join('\n\n'), fullText);
     return fullText;
   }
+};
+
+export const generateInspirationPack = async (
+  node: StoryNode,
+  book: Book,
+  ancestors: StoryNode[],
+  linearContext: string,
+  semanticContext: string,
+  signal?: AbortSignal
+): Promise<InspirationPack> => {
+  ensureNotAborted(signal);
+  updateStatus('正在生成卡文急救灵感包...');
+  const config = getConfigForTask('chat');
+  const controls = getPromptControls('chat', config);
+  const factContext = await getFactContextForBook(book.id);
+
+  const hierarchyContext = ancestors.length > 0
+    ? ancestors.map((ancestor) => `[${getNodeTypeName(ancestor.type)}] ${ancestor.title} - ${ancestor.summary}`).join('\n')
+    : '无上级结构信息';
+
+  const prompt = `${controls}
+[书籍]
+书名: ${book.title}
+梗概: ${book.premise}
+
+[当前场景]
+标题: ${node.title}
+细纲: ${node.summary}
+正文片段: ${(node.content || '').slice(-1200) || '（暂无正文）'}
+
+[层级上下文]
+${hierarchyContext}
+
+[近期线性记忆]
+${linearContext || '（开篇，无前文）'}
+
+[语义检索记忆]
+${semanticContext || '（无高相关片段）'}
+
+[事实库]
+${factContext.factHardConstraints}
+${factContext.factSoftContext}
+
+[任务]
+你要输出一个“卡文急救灵感包”，帮助作者立刻继续写。必须是简体中文，且仅返回 JSON：
+{
+  "direction": "一句话推进方向",
+  "nextBeats": ["...","...","..."],
+  "conflictEscalations": ["...","...","..."],
+  "twists": ["...","...","..."],
+  "dialogueHooks": ["...","...","..."],
+  "sensoryAnchors": ["...","...","..."],
+  "cliffhangers": ["...","...","..."]
+}
+规则：
+1) 每个数组给 3-5 条短句，必须可直接写进正文。
+2) 不要复述空话，不要解释 JSON。
+3) 严格遵守锁定事实，不得冲突。`;
+
+  const parsePack = (raw: string): InspirationPack => {
+    const clean = raw.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(clean) as Partial<InspirationPack>;
+
+    const ensureList = (list: unknown) => (
+      Array.isArray(list)
+        ? list.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 5)
+        : []
+    );
+
+    return {
+      direction: String(parsed.direction || '').trim(),
+      nextBeats: ensureList(parsed.nextBeats),
+      conflictEscalations: ensureList(parsed.conflictEscalations),
+      twists: ensureList(parsed.twists),
+      dialogueHooks: ensureList(parsed.dialogueHooks),
+      sensoryAnchors: ensureList(parsed.sensoryAnchors),
+      cliffhangers: ensureList(parsed.cliffhangers),
+    };
+  };
+
+  if (config.provider === 'google') {
+    const ai = new GoogleGenAI({ apiKey: config.apiKey });
+    const schema: Schema = {
+      type: Type.OBJECT,
+      properties: {
+        direction: { type: Type.STRING },
+        nextBeats: { type: Type.ARRAY, items: { type: Type.STRING } },
+        conflictEscalations: { type: Type.ARRAY, items: { type: Type.STRING } },
+        twists: { type: Type.ARRAY, items: { type: Type.STRING } },
+        dialogueHooks: { type: Type.ARRAY, items: { type: Type.STRING } },
+        sensoryAnchors: { type: Type.ARRAY, items: { type: Type.STRING } },
+        cliffhangers: { type: Type.ARRAY, items: { type: Type.STRING } },
+      },
+      required: ['direction', 'nextBeats', 'conflictEscalations', 'twists', 'dialogueHooks', 'sensoryAnchors', 'cliffhangers'],
+    };
+
+    const response = await ai.models.generateContent({
+      model: config.modelName,
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: schema,
+        systemInstruction: '你是资深小说策划编辑，擅长在不破坏设定的前提下快速解卡。请仅输出 JSON。',
+        temperature: Math.max(0.7, config.temperature),
+      },
+    } as any);
+
+    const text = response.text || '';
+    recordUsage('chat', config, prompt, text);
+    return parsePack(text);
+  }
+
+  const messages = [
+    {
+      role: 'system',
+      content: '你是资深小说策划编辑，擅长在不破坏设定的前提下快速解卡。请仅输出 JSON。',
+    },
+    {
+      role: 'user',
+      content: prompt,
+    },
+  ];
+  const text = await callOpenAI(config, messages, false, signal);
+  recordUsage('chat', config, messages.map((item) => item.content).join('\n\n'), text);
+  return parsePack(text);
 };

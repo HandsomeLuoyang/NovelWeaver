@@ -20,7 +20,7 @@ export const useAIWriter = () => {
         setGenerationStatus("已中止");
     }, [setGenerating, setGenerationStatus]);
 
-    const handleAIDraft = useCallback(async (
+const handleAIDraft = useCallback(async (
         node: StoryNode,
         book: Book,
         onContentUpdate: (content: string) => void,
@@ -38,6 +38,14 @@ export const useAIWriter = () => {
             const ancestors = await getAncestors(node.id);
             const semanticContext = await getSemanticContext(book.id, node.id, `${node.title}\n${node.summary}`, 3);
 
+            const creativeModeHint = (() => {
+                if (settings.creativeMode === 'divergent') return '发散模式：优先输出非常规路径与新奇联想';
+                if (settings.creativeMode === 'twist') return '反转模式：优先埋设转折与信息反差';
+                if (settings.creativeMode === 'conflict') return '冲突模式：优先拉高对抗与代价';
+                if (settings.creativeMode === 'dialogue') return '对白模式：优先通过对话推进关系和信息';
+                return '平衡模式：剧情推进与文风质量并重';
+            })();
+
             let fullDraft = "";
             await draftScene(
                 node,
@@ -49,7 +57,13 @@ export const useAIWriter = () => {
                     fullDraft += chunk;
                     onContentUpdate(fullDraft);
                 },
-                abortControllerRef.current.signal
+                abortControllerRef.current.signal,
+                {
+                    creativeModeHint,
+                    antiBlockHint: settings.antiBlock
+                        ? '启用：若当前推进受阻，务必给出可执行行动并抛出下一轮悬念'
+                        : '关闭：按常规叙事推进',
+                }
             );
 
             if (shouldPersist) {

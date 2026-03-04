@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Book, Character, StoryNode } from '../types';
+import { Book, Character, FactCandidate, FactEntry, StoryNode } from '../types';
 import { db } from '../db';
 import { Icons } from './Icons';
 import { CharacterList } from './WorldBible/CharacterList';
 import { RelationGraph } from './WorldBible/RelationGraph';
 import { exportAsMarkdown, exportAsText, exportAsHTML, downloadFile } from '../services/exportService';
+import { FactLibraryPanel } from './FactLibraryPanel';
 
 interface Props {
   book: Book;
@@ -18,8 +19,10 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
   const [premise, setPremise] = useState(book.premise);
   const [worldSetting, setWorldSetting] = useState(book.worldSetting);
   const [characters, setCharacters] = useState<Character[]>(book.characters || []);
+  const [facts, setFacts] = useState<FactEntry[]>([]);
+  const [factCandidates, setFactCandidates] = useState<FactCandidate[]>([]);
   const [graphNodes, setGraphNodes] = useState<StoryNode[]>([]);
-  const [activeTab, setActiveTab] = useState<'basic' | 'world' | 'chars' | 'graph' | 'export'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'world' | 'chars' | 'facts' | 'graph' | 'export'>('basic');
 
   useEffect(() => {
     if (!isOpen) return;
@@ -28,6 +31,14 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
     setWorldSetting(book.worldSetting);
     setCharacters(book.characters || []);
     setActiveTab('basic');
+    void (async () => {
+      const [factList, candidateList] = await Promise.all([
+        db.facts.where('bookId').equals(book.id).toArray(),
+        db.factCandidates.where('bookId').equals(book.id).toArray(),
+      ]);
+      setFacts(factList.sort((a, b) => Number(b.locked) - Number(a.locked) || b.updatedAt - a.updatedAt));
+      setFactCandidates(candidateList.sort((a, b) => b.createdAt - a.createdAt));
+    })();
   }, [book, isOpen]);
 
   useEffect(() => {
@@ -69,7 +80,39 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
         characters: sanitizedCharacters
       };
 
-      await db.books.put(updatedBook);
+      const now = Date.now();
+      const sanitizedFacts = facts
+        .map((fact) => ({
+          ...fact,
+          bookId: book.id,
+          statement: fact.statement.trim(),
+          notes: (fact.notes || '').trim(),
+          tags: (fact.tags || []).map((tag) => tag.trim()).filter((tag) => tag.length > 0).slice(0, 8),
+          createdAt: fact.createdAt || now,
+          updatedAt: now,
+        }))
+        .filter((fact) => fact.statement.length > 0 && fact.status === 'active');
+
+      const sanitizedCandidates = factCandidates
+        .map((candidate) => ({
+          ...candidate,
+          bookId: book.id,
+          statement: candidate.statement.trim(),
+          createdAt: candidate.createdAt || now,
+        }))
+        .filter((candidate) => candidate.statement.length > 0);
+
+      await db.transaction('rw', [db.books, db.facts, db.factCandidates], async () => {
+        await db.books.put(updatedBook);
+        await db.facts.where('bookId').equals(book.id).delete();
+        await db.factCandidates.where('bookId').equals(book.id).delete();
+        if (sanitizedFacts.length > 0) {
+          await db.facts.bulkPut(sanitizedFacts);
+        }
+        if (sanitizedCandidates.length > 0) {
+          await db.factCandidates.bulkPut(sanitizedCandidates);
+        }
+      });
       onUpdate(updatedBook);
       onClose();
     } catch (e) {
@@ -144,6 +187,17 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
             {activeTab === 'chars' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
           </button>
           <button
+            onClick={() => setActiveTab('facts')}
+            className={`flex items-center px-6 py-3 text-sm font-medium transition-all relative ${activeTab === 'facts' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Icons.AlertCircle size={16} className="mr-2" />
+            事实库
+            <span className="ml-2 px-1.5 py-0.5 text-[10px] bg-secondary border border-border rounded-full text-muted-foreground">
+              {facts.filter((fact) => fact.status === 'active').length}
+            </span>
+            {activeTab === 'facts' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />}
+          </button>
+          <button
             onClick={() => setActiveTab('graph')}
             className={`flex items-center px-6 py-3 text-sm font-medium transition-all relative ${activeTab === 'graph' ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground'}`}
           >
@@ -210,6 +264,18 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
           {activeTab === 'graph' && (
             <div className="max-w-4xl mx-auto animate-in fade-in duration-200">
               <RelationGraph characters={characters} nodes={graphNodes} />
+            </div>
+          )}
+
+          {activeTab === 'facts' && (
+            <div className="h-full animate-in fade-in duration-200">
+              <FactLibraryPanel
+                bookId={book.id}
+                facts={facts}
+                candidates={factCandidates}
+                onFactsChange={setFacts}
+                onCandidatesChange={setFactCandidates}
+              />
             </div>
           )}
 

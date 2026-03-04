@@ -33,6 +33,7 @@ const buildSceneMetaLines = (node: StoryNode) => {
  */
 export const exportAsMarkdown = async (book: Book): Promise<string> => {
   const nodes = await getBookNodes(book.id);
+  const facts = await db.facts.where('bookId').equals(book.id).toArray();
 
   let markdown = `# ${book.title}\n\n`;
   markdown += `> ${book.premise}\n\n`;
@@ -49,6 +50,17 @@ export const exportAsMarkdown = async (book: Book): Promise<string> => {
     markdown += `- **介绍**: ${char.description}\n`;
     markdown += `- **秘密**: ${char.secret}\n\n`;
   });
+
+  if (facts.length > 0) {
+    markdown += `## 事实库\n\n`;
+    facts
+      .filter((fact) => fact.status === 'active')
+      .sort((a, b) => Number(b.locked) - Number(a.locked) || b.updatedAt - a.updatedAt)
+      .forEach((fact) => {
+        markdown += `- ${fact.locked ? '[锁定] ' : ''}${fact.statement}\n`;
+      });
+    markdown += `\n`;
+  }
 
   markdown += `---\n\n`;
   markdown += `## 正文\n\n`;
@@ -96,6 +108,7 @@ export const exportAsMarkdown = async (book: Book): Promise<string> => {
  */
 export const exportAsText = async (book: Book): Promise<string> => {
   const nodes = await getBookNodes(book.id);
+  const facts = await db.facts.where('bookId').equals(book.id).toArray();
 
   let text = `${book.title}\n`;
   text += `${'='.repeat(book.title.length)}\n\n`;
@@ -112,6 +125,17 @@ export const exportAsText = async (book: Book): Promise<string> => {
     text += `   ${char.description}\n`;
     text += `   秘密：${char.secret}\n\n`;
   });
+
+  if (facts.length > 0) {
+    text += `【事实库】\n`;
+    facts
+      .filter((fact) => fact.status === 'active')
+      .sort((a, b) => Number(b.locked) - Number(a.locked) || b.updatedAt - a.updatedAt)
+      .forEach((fact, idx) => {
+        text += `${idx + 1}. ${fact.locked ? '[锁定] ' : ''}${fact.statement}\n`;
+      });
+    text += `\n`;
+  }
 
   text += `${'='.repeat(40)}\n\n`;
   text += `【正文】\n\n`;
@@ -260,6 +284,7 @@ export const downloadFile = (content: string, filename: string) => {
  */
 export const exportAsHTML = async (book: Book): Promise<string> => {
   const nodes = await getBookNodes(book.id);
+  const facts = await db.facts.where('bookId').equals(book.id).toArray();
 
   let html = `
     <!DOCTYPE html>
@@ -290,6 +315,17 @@ export const exportAsHTML = async (book: Book): Promise<string> => {
         <p>核心梗概：${book.premise}</p>
         <p>总字数：${book.wordCount || '统计中'}</p>
       </div>
+
+      ${facts.length > 0 ? `
+      <h2>事实库</h2>
+      <ul>
+        ${facts
+          .filter((fact) => fact.status === 'active')
+          .sort((a, b) => Number(b.locked) - Number(a.locked) || b.updatedAt - a.updatedAt)
+          .map((fact) => `<li>${fact.locked ? '[锁定] ' : ''}${fact.statement}</li>`)
+          .join('')}
+      </ul>
+      ` : ''}
 
       <div class="toc">
         <h2>目录</h2>

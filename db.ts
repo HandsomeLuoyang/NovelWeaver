@@ -7,7 +7,9 @@ import {
   HistoryAction,
   DeletedBookEntry,
   DeletedNodeEntry,
-  RecoverySnapshot
+  RecoverySnapshot,
+  FactEntry,
+  FactCandidate
 } from './types';
 
 class NovelWeaverDatabase extends Dexie {
@@ -18,6 +20,8 @@ class NovelWeaverDatabase extends Dexie {
   deletedBooks!: Table<DeletedBookEntry>;
   deletedNodes!: Table<DeletedNodeEntry>;
   backups!: Table<RecoverySnapshot>;
+  facts!: Table<FactEntry>;
+  factCandidates!: Table<FactCandidate>;
 
   constructor() {
     super('NovelWeaverDB');
@@ -43,6 +47,17 @@ class NovelWeaverDatabase extends Dexie {
       deletedBooks: 'id, deletedAt, title',
       deletedNodes: 'id, bookId, rootNodeId, deletedAt',
       backups: 'id, createdAt, source'
+    });
+    this.version(9).stores({
+      books: 'id, title, createdAt',
+      nodes: 'id, bookId, parentId, type, order, [bookId+parentId]',
+      history: '++id, nodeId, timestamp, action',
+      snapshots: 'id, parentId, bookId, createdAt',
+      deletedBooks: 'id, deletedAt, title',
+      deletedNodes: 'id, bookId, rootNodeId, deletedAt',
+      backups: 'id, createdAt, source',
+      facts: 'id, bookId, locked, status, category, updatedAt, [bookId+status], [bookId+locked]',
+      factCandidates: 'id, bookId, createdAt, category'
     });
   }
 }
@@ -343,6 +358,8 @@ export const moveBookToRecycleBin = async (bookId: string) => {
     ? await db.history.where('nodeId').anyOf(nodeIds).toArray()
     : [];
   const snapshots = await db.snapshots.where('bookId').equals(bookId).toArray();
+  const facts = await db.facts.where('bookId').equals(bookId).toArray();
+  const factCandidates = await db.factCandidates.where('bookId').equals(bookId).toArray();
 
   const recycleEntry: DeletedBookEntry = {
     id: crypto.randomUUID(),
@@ -352,16 +369,20 @@ export const moveBookToRecycleBin = async (bookId: string) => {
       book,
       nodes,
       history,
-      snapshots
+      snapshots,
+      facts,
+      factCandidates
     }
   };
 
-  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks], async () => {
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.facts, db.factCandidates], async () => {
     await db.deletedBooks.add(recycleEntry);
     if (nodeIds.length > 0) {
       await db.history.where('nodeId').anyOf(nodeIds).delete();
     }
     await db.snapshots.where('bookId').equals(bookId).delete();
+    await db.facts.where('bookId').equals(bookId).delete();
+    await db.factCandidates.where('bookId').equals(bookId).delete();
     await db.nodes.where('bookId').equals(bookId).delete();
     await db.books.delete(bookId);
   });
@@ -414,7 +435,25 @@ export const restoreBookFromRecycleBin = async (entryId: string) => {
     }))
     .filter((snapshot) => restoredNodeIds.has(snapshot.parentId));
 
-  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks], async () => {
+  const sourceFacts = recycleEntry.data.facts || [];
+  const restoredFacts = sourceFacts.map((fact) => ({
+    ...fact,
+    id: crypto.randomUUID(),
+    bookId: restoredBookId,
+    sourceNodeId: fact.sourceNodeId ? (nodeIdMap.get(fact.sourceNodeId) || undefined) : undefined,
+    updatedAt: Date.now(),
+  }));
+
+  const sourceCandidates = recycleEntry.data.factCandidates || [];
+  const restoredCandidates = sourceCandidates.map((candidate) => ({
+    ...candidate,
+    id: crypto.randomUUID(),
+    bookId: restoredBookId,
+    sourceNodeId: candidate.sourceNodeId ? (nodeIdMap.get(candidate.sourceNodeId) || undefined) : undefined,
+    createdAt: Date.now(),
+  }));
+
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.facts, db.factCandidates], async () => {
     await db.books.put(restoredBook);
     if (restoredNodes.length > 0) {
       await db.nodes.bulkPut(restoredNodes);
@@ -424,6 +463,12 @@ export const restoreBookFromRecycleBin = async (entryId: string) => {
     }
     if (restoredSnapshots.length > 0) {
       await db.snapshots.bulkPut(restoredSnapshots);
+    }
+    if (restoredFacts.length > 0) {
+      await db.facts.bulkPut(restoredFacts);
+    }
+    if (restoredCandidates.length > 0) {
+      await db.factCandidates.bulkPut(restoredCandidates);
     }
     await db.deletedBooks.delete(entryId);
   });

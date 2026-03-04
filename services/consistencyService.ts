@@ -1,4 +1,5 @@
-import { Book, NodeType, StoryNode } from '../types';
+import { Book, FactEntry, NodeType, StoryNode } from '../types';
+import { detectLockedFactConflicts } from './factLibrary';
 
 export type FindingSeverity = 'high' | 'medium' | 'low';
 
@@ -79,7 +80,7 @@ const detectCharacterState = (text: string): CharacterState | null => {
   return null;
 };
 
-export const runConsistencyCheck = (book: Book, nodes: StoryNode[]): ConsistencyFinding[] => {
+export const runConsistencyCheck = (book: Book, nodes: StoryNode[], facts: FactEntry[] = []): ConsistencyFinding[] => {
   const findings: ConsistencyFinding[] = [];
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
 
@@ -331,6 +332,21 @@ export const runConsistencyCheck = (book: Book, nodes: StoryNode[]): Consistency
         nodeId: scene.id,
       });
     }
+  });
+
+  // 10) Locked fact contradiction check
+  linearScenes.forEach((scene) => {
+    const sceneText = `${scene.title}\n${scene.summary}\n${scene.content || ''}`;
+    const conflicts = detectLockedFactConflicts(facts, sceneText);
+    conflicts.forEach((conflict, index) => {
+      findings.push({
+        id: `locked-fact-conflict-${scene.id}-${conflict.factId}-${index}`,
+        severity: 'high',
+        title: '锁定事实疑似被改写',
+        description: `场景「${scene.title}」可能与锁定事实冲突：${conflict.factStatement}（命中片段：${conflict.evidence}）`,
+        nodeId: scene.id,
+      });
+    });
   });
 
   return findings;

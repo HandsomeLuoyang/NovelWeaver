@@ -7,6 +7,8 @@ import {
   DeletedBookEntry,
   DeletedNodeEntry,
   RecoverySnapshot,
+  FactEntry,
+  FactCandidate,
 } from '../types';
 
 interface ContentBackup {
@@ -17,6 +19,8 @@ interface ContentBackup {
   snapshots: StructureSnapshot[];
   deletedBooks: DeletedBookEntry[];
   deletedNodes: DeletedNodeEntry[];
+  facts: FactEntry[];
+  factCandidates: FactCandidate[];
 }
 
 export interface IntegrityReport {
@@ -73,6 +77,8 @@ const normalizeBackup = (payload: Partial<ContentBackup> | null | undefined): Co
     snapshots: Array.isArray(safe.snapshots) ? safe.snapshots : [],
     deletedBooks: Array.isArray(safe.deletedBooks) ? safe.deletedBooks : [],
     deletedNodes: Array.isArray(safe.deletedNodes) ? safe.deletedNodes : [],
+    facts: Array.isArray(safe.facts) ? safe.facts : [],
+    factCandidates: Array.isArray(safe.factCandidates) ? safe.factCandidates : [],
   };
 };
 
@@ -93,6 +99,16 @@ const validateBackup = (payload: Partial<ContentBackup> | null | undefined): Int
   normalized.nodes.forEach((node) => {
     if (!bookIds.has(node.bookId)) {
       issues.push(`节点 ${node.title} 的 bookId 不存在`);
+    }
+  });
+  normalized.facts.forEach((fact) => {
+    if (!bookIds.has(fact.bookId)) {
+      issues.push(`事实 ${fact.statement.slice(0, 20)}... 的 bookId 不存在`);
+    }
+  });
+  normalized.factCandidates.forEach((candidate) => {
+    if (!bookIds.has(candidate.bookId)) {
+      issues.push(`候选事实 ${candidate.statement.slice(0, 20)}... 的 bookId 不存在`);
     }
   });
 
@@ -123,6 +139,8 @@ const collectBackupPayload = async (): Promise<ContentBackup> => {
   const snapshots = await db.snapshots.toArray();
   const deletedBooks = await db.deletedBooks.toArray();
   const deletedNodes = await db.deletedNodes.toArray();
+  const facts = await db.facts.toArray();
+  const factCandidates = await db.factCandidates.toArray();
 
   return {
     version: 1,
@@ -132,17 +150,21 @@ const collectBackupPayload = async (): Promise<ContentBackup> => {
     snapshots,
     deletedBooks,
     deletedNodes,
+    facts,
+    factCandidates,
   };
 };
 
 const applyBackupPayload = async (payload: ContentBackup) => {
-  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes], async () => {
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes, db.facts, db.factCandidates], async () => {
     await db.books.clear();
     await db.nodes.clear();
     await db.history.clear();
     await db.snapshots.clear();
     await db.deletedBooks.clear();
     await db.deletedNodes.clear();
+    await db.facts.clear();
+    await db.factCandidates.clear();
 
     if (payload.books.length > 0) {
       await db.books.bulkAdd(payload.books);
@@ -161,6 +183,12 @@ const applyBackupPayload = async (payload: ContentBackup) => {
     }
     if (payload.deletedNodes.length > 0) {
       await db.deletedNodes.bulkAdd(payload.deletedNodes);
+    }
+    if (payload.facts.length > 0) {
+      await db.facts.bulkAdd(payload.facts);
+    }
+    if (payload.factCandidates.length > 0) {
+      await db.factCandidates.bulkAdd(payload.factCandidates);
     }
   });
 };

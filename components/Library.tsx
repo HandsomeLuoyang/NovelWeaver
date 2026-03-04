@@ -175,12 +175,14 @@ export const Library: React.FC = () => {
                 const nodes = await getBookNodes(book.id);
                 const nodeIds = nodes.map(n => n.id);
                 const history = await db.history.where('nodeId').anyOf(nodeIds).toArray();
+                const facts = await db.facts.where('bookId').equals(book.id).toArray();
 
                 const exportData: ExportData = {
                     version: 2,
                     book: book,
                     nodes: nodes,
-                    history: history
+                    history: history,
+                    facts,
                 };
 
                 content = JSON.stringify(exportData, null, 2);
@@ -234,6 +236,17 @@ export const Library: React.FC = () => {
 
                 await db.books.add(newBook);
                 await db.nodes.bulkAdd(newNodes);
+                const importedFacts = (data.facts || []).map((fact) => ({
+                    ...fact,
+                    id: uuidv4(),
+                    bookId: newBookId,
+                    sourceNodeId: fact.sourceNodeId ? (idMap.get(fact.sourceNodeId) || undefined) : undefined,
+                    createdAt: fact.createdAt || Date.now(),
+                    updatedAt: Date.now(),
+                }));
+                if (importedFacts.length > 0) {
+                    await db.facts.bulkAdd(importedFacts);
+                }
 
                 if (data.history && data.history.length > 0) {
                     const newHistory: HistoryEntry[] = [];

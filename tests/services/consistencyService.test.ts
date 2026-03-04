@@ -130,4 +130,39 @@ describe('runConsistencyCheck', () => {
     expect(hasPrefix('char-location-conflict-')).toBe(true);
     expect(hasPrefix('outline-drift-')).toBe(true);
   });
+
+  it('detects conflicts against locked facts', () => {
+    const book = createBook();
+    const nodes = [
+      createNode({ id: 'v1', type: 'volume', title: 'V1', order: 0 }),
+      createNode({ id: 'a1', parentId: 'v1', type: 'arc', title: 'A1', order: 0 }),
+      createNode({ id: 'c1', parentId: 'a1', type: 'chapter', title: 'C1', order: 0 }),
+      createNode({
+        id: 's1',
+        parentId: 'c1',
+        type: 'scene',
+        title: 'S1',
+        summary: '人物冲突',
+        status: 'drafted',
+        content: '林秋并不是霜港治安官，他只是普通水手。'.repeat(10),
+        order: 0,
+      }),
+    ];
+
+    const findings = runConsistencyCheck(book, nodes, [{
+      id: 'f1',
+      bookId: book.id,
+      category: 'character',
+      statement: '林秋是霜港治安官',
+      notes: '',
+      tags: [],
+      reliability: 'confirmed',
+      locked: true,
+      status: 'active',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }]);
+
+    expect(findings.some((finding) => finding.id.startsWith('locked-fact-conflict-'))).toBe(true);
+  });
 });

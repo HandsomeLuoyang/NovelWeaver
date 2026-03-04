@@ -27,8 +27,50 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         drafting: 0.75,
         polishing: 0.6
     };
+    const creativeToolkit = modelConfig.creativeToolkit || {
+        antiBlockMode: true,
+        divergenceBoost: 0.65,
+        twistIntensity: 0.55,
+        paceVariance: 0.5,
+    };
 
     if (!isOpen) return null;
+
+    const applyCreativityPreset = (preset: 'balanced' | 'wild' | 'stable' | 'anti-block') => {
+        if (preset === 'balanced') {
+            updateModelConfig({
+                creativityLevel: { genesis: 0.9, expansion: 0.8, drafting: 0.75, polishing: 0.6 },
+                creativeToolkit: { antiBlockMode: true, divergenceBoost: 0.65, twistIntensity: 0.55, paceVariance: 0.5 },
+                enableCreativitySeeds: true,
+                enableQualityCheck: true,
+            });
+            return;
+        }
+        if (preset === 'wild') {
+            updateModelConfig({
+                creativityLevel: { genesis: 1.0, expansion: 0.95, drafting: 0.88, polishing: 0.7 },
+                creativeToolkit: { antiBlockMode: true, divergenceBoost: 0.9, twistIntensity: 0.85, paceVariance: 0.75 },
+                enableCreativitySeeds: true,
+                enableQualityCheck: false,
+            });
+            return;
+        }
+        if (preset === 'stable') {
+            updateModelConfig({
+                creativityLevel: { genesis: 0.75, expansion: 0.65, drafting: 0.58, polishing: 0.45 },
+                creativeToolkit: { antiBlockMode: false, divergenceBoost: 0.25, twistIntensity: 0.2, paceVariance: 0.2 },
+                enableCreativitySeeds: false,
+                enableQualityCheck: true,
+            });
+            return;
+        }
+        updateModelConfig({
+            creativityLevel: { genesis: 0.92, expansion: 0.85, drafting: 0.8, polishing: 0.62 },
+            creativeToolkit: { antiBlockMode: true, divergenceBoost: 0.78, twistIntensity: 0.68, paceVariance: 0.62 },
+            enableCreativitySeeds: true,
+            enableQualityCheck: true,
+        });
+    };
 
     const handleEdit = (m: AIModel) => {
         setEditingModelId(m.id);
@@ -212,6 +254,36 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                         <div className="space-y-6">
                             <p className="text-sm text-muted-foreground mb-4">精细调控 AI 的创意水平和写作行为。创意度越高，AI 越天马行空；越低则越保守稳定。</p>
 
+                            <div className="bg-secondary/20 p-4 rounded-lg border border-border">
+                                <h3 className="text-sm font-bold text-foreground mb-3">创意预设</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <button
+                                        onClick={() => applyCreativityPreset('balanced')}
+                                        className="px-3 py-2 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                                    >
+                                        平衡默认
+                                    </button>
+                                    <button
+                                        onClick={() => applyCreativityPreset('anti-block')}
+                                        className="px-3 py-2 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                                    >
+                                        防卡文
+                                    </button>
+                                    <button
+                                        onClick={() => applyCreativityPreset('wild')}
+                                        className="px-3 py-2 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                                    >
+                                        放飞灵感
+                                    </button>
+                                    <button
+                                        onClick={() => applyCreativityPreset('stable')}
+                                        className="px-3 py-2 text-xs rounded border border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                                    >
+                                        稳定保守
+                                    </button>
+                                </div>
+                            </div>
+
                             {/* Creativity Level Sliders */}
                             <div className="bg-secondary/20 p-4 rounded-lg border border-border">
                                 <h3 className="text-sm font-bold text-foreground mb-4">创意度控制 (Temperature)</h3>
@@ -290,6 +362,65 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                             <div className="w-11 h-6 bg-secondary peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                         </label>
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-secondary/20 p-4 rounded-lg border border-border">
+                                <h3 className="text-sm font-bold text-foreground mb-4">防卡文参数</h3>
+
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between p-3 bg-background/50 rounded border border-border/50">
+                                        <div className="flex-1">
+                                            <div className="text-sm font-medium text-foreground">卡文急救模式</div>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                强制 AI 在生成时附带推进选项、冲突升级和悬念钩子，避免剧情停滞。
+                                            </p>
+                                        </div>
+                                        <label className="relative inline-flex items-center cursor-pointer ml-4">
+                                            <input
+                                                type="checkbox"
+                                                checked={creativeToolkit.antiBlockMode}
+                                                onChange={(e) => updateModelConfig({
+                                                    creativeToolkit: {
+                                                        ...creativeToolkit,
+                                                        antiBlockMode: e.target.checked
+                                                    }
+                                                })}
+                                                className="sr-only peer"
+                                            />
+                                            <div className="w-11 h-6 bg-secondary peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                        </label>
+                                    </div>
+
+                                    {[
+                                        { key: 'divergenceBoost', label: '发散度', desc: '提高备选路径与新奇联想数量' },
+                                        { key: 'twistIntensity', label: '反转强度', desc: '提高冲突突变与逆转概率' },
+                                        { key: 'paceVariance', label: '节奏波动', desc: '拉开快慢节奏，减少平铺叙事' },
+                                    ].map((item) => (
+                                        <div key={item.key}>
+                                            <div className="flex justify-between items-center mb-1.5">
+                                                <label className="text-xs font-medium text-foreground">{item.label}</label>
+                                                <span className="text-[11px] text-primary font-mono bg-primary/10 px-2 py-0.5 rounded">
+                                                    {Number(creativeToolkit[item.key as keyof typeof creativeToolkit]).toFixed(2)}
+                                                </span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="1"
+                                                step="0.05"
+                                                value={Number(creativeToolkit[item.key as keyof typeof creativeToolkit])}
+                                                onChange={(e) => updateModelConfig({
+                                                    creativeToolkit: {
+                                                        ...creativeToolkit,
+                                                        [item.key]: parseFloat(e.target.value)
+                                                    }
+                                                })}
+                                                className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                            />
+                                            <p className="text-[10px] text-muted-foreground mt-1">{item.desc}</p>
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         </div>

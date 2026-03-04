@@ -144,7 +144,13 @@ const defaultConfig: ModelConfig = {
     polishing: 0.6
   },
   enableQualityCheck: false,
-  enableCreativitySeeds: true
+  enableCreativitySeeds: true,
+  creativeToolkit: {
+    antiBlockMode: true,
+    divergenceBoost: 0.65,
+    twistIntensity: 0.55,
+    paceVariance: 0.5,
+  },
 };
 
 const defaultPromptProfiles = normalizePromptProfiles([createDefaultPromptProfile()]);
@@ -362,6 +368,22 @@ const resolveWritingGoals = (writingGoals: Record<string, WritingGoal> | undefin
   return next;
 };
 
+const resolveModelConfig = (modelConfig: ModelConfig | undefined) => {
+  const incoming = modelConfig || defaultConfig;
+  return {
+    ...defaultConfig,
+    ...incoming,
+    creativityLevel: {
+      ...defaultConfig.creativityLevel,
+      ...(incoming.creativityLevel || {}),
+    },
+    creativeToolkit: {
+      ...defaultConfig.creativeToolkit,
+      ...(incoming.creativeToolkit || {}),
+    },
+  } as ModelConfig;
+};
+
 export const useStore = create<AppState>()(
   persist<AppState, [], [], PersistedState>(
     (set) => ({
@@ -508,7 +530,10 @@ export const useStore = create<AppState>()(
         models: state.models.filter(m => m.id !== id)
       })),
       updateModelConfig: (cfg) => set((state) => ({
-        modelConfig: { ...state.modelConfig, ...cfg }
+        modelConfig: resolveModelConfig({
+          ...state.modelConfig,
+          ...cfg
+        })
       })),
       updateEditorTypography: (cfg) => set((state) => ({
         editorTypography: sanitizeEditorTypography({
@@ -693,6 +718,7 @@ export const useStore = create<AppState>()(
         state.promptProfileRevisions = resolved.promptProfileRevisions;
         state.editorTypography = safeTypography;
         state.writingGoals = resolveWritingGoals(state.writingGoals);
+        state.modelConfig = resolveModelConfig(state.modelConfig);
         console.log('Settings rehydrated from local file');
       },
       merge: (persistedState, currentState) => {
@@ -706,6 +732,7 @@ export const useStore = create<AppState>()(
           ...currentState,
           ...persisted,
           editorTypography: sanitizeEditorTypography(persisted.editorTypography || currentState.editorTypography),
+          modelConfig: resolveModelConfig(persisted.modelConfig || currentState.modelConfig),
           promptProfiles: resolved.promptProfiles,
           activePromptProfileId: resolved.activePromptProfileId,
           promptProfileRevisions: resolved.promptProfileRevisions,

@@ -22,13 +22,20 @@ export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOp
     },
     [book.id, isOpen]
   );
+  const facts = useLiveQuery(
+    async () => {
+      if (!isOpen) return [];
+      return db.facts.where('bookId').equals(book.id).toArray();
+    },
+    [book.id, isOpen]
+  );
   const report: PublishWorkflowReport | null = useMemo(() => {
-    if (!nodes) return null;
-    return evaluatePublishWorkflow(book, nodes);
-  }, [book, nodes]);
+    if (!nodes || !facts) return null;
+    return evaluatePublishWorkflow(book, nodes, facts);
+  }, [book, nodes, facts]);
 
   if (!isOpen) return null;
-  const loading = !nodes;
+  const loading = !nodes || !facts;
 
   const jumpToNode = (nodeId?: string) => {
     if (!nodeId || !nodes) return;

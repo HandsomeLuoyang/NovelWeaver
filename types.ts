@@ -17,6 +17,37 @@ export interface Character {
   secret: string;
 }
 
+export type FactCategory = 'world' | 'character' | 'timeline' | 'rule' | 'location' | 'item' | 'event' | 'custom';
+export type FactReliability = 'confirmed' | 'tentative';
+export type FactStatus = 'active' | 'archived';
+
+export interface FactEntry {
+  id: string;
+  bookId: string;
+  category: FactCategory;
+  statement: string;
+  notes?: string;
+  tags: string[];
+  sourceNodeId?: string;
+  sourceExcerpt?: string;
+  reliability: FactReliability;
+  locked: boolean;
+  status: FactStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FactCandidate {
+  id: string;
+  bookId: string;
+  category: FactCategory;
+  statement: string;
+  sourceNodeId?: string;
+  sourceExcerpt?: string;
+  confidence: number;
+  createdAt: number;
+}
+
 export interface Book {
   id: string;
   title: string;
@@ -88,6 +119,13 @@ export interface ModelConfig {
   enableQualityCheck: boolean;
   // 灵感种子开关
   enableCreativitySeeds: boolean;
+  // 防卡文与创意驱动参数
+  creativeToolkit: {
+    antiBlockMode: boolean;
+    divergenceBoost: number;
+    twistIntensity: number;
+    paceVariance: number;
+  };
 }
 
 export type DraftCreativeMode = 'balanced' | 'divergent' | 'twist' | 'conflict' | 'dialogue';
@@ -135,6 +173,7 @@ export interface ExportData {
   book: Book;
   nodes: StoryNode[];
   history?: HistoryEntry[];
+  facts?: FactEntry[];
 }
 
 export type HistoryAction = 'manual' | 'ai-draft' | 'ai-polish' | 'restore';
@@ -168,6 +207,8 @@ export interface DeletedBookEntry {
     nodes: StoryNode[];
     history: HistoryEntry[];
     snapshots: StructureSnapshot[];
+    facts?: FactEntry[];
+    factCandidates?: FactCandidate[];
   };
 }
 
