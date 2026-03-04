@@ -19,6 +19,15 @@ import {
 import type { Toast } from './hooks/useToast';
 import { DEFAULT_EDITOR_TYPOGRAPHY, sanitizeEditorTypography } from './services/typography';
 import { clonePromptProfile, createDefaultPromptProfile, normalizePromptProfile, normalizePromptProfiles } from './services/promptProfiles';
+import {
+  DEFAULT_DARK_THEME_VARIANT,
+  DEFAULT_LIGHT_THEME_VARIANT,
+  DarkThemeVariant,
+  LightThemeVariant,
+  sanitizeDarkThemeVariant,
+  sanitizeLightThemeVariant,
+  ThemeMode,
+} from './services/theme';
 
 interface AppState {
   // Session State (Not persisted usually, but for this app simplistic is fine)
@@ -33,7 +42,9 @@ interface AppState {
   toasts: Toast[];
 
   // Settings State (Persisted)
-  theme: 'light' | 'dark' | 'system';
+  theme: ThemeMode;
+  lightThemeVariant: LightThemeVariant;
+  darkThemeVariant: DarkThemeVariant;
   models: AIModel[];
   modelConfig: ModelConfig;
   editorTypography: EditorTypographySettings;
@@ -98,7 +109,9 @@ interface AppState {
   importPromptProfiles: (profiles: PromptProfile[], options?: { activateFirst?: boolean }) => string[];
   rollbackPromptProfile: (profileId: string, revisionId: string) => void;
   setWritingGoal: (bookId: string, patch: Partial<WritingGoal>) => void;
-  setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  setTheme: (theme: ThemeMode) => void;
+  setLightThemeVariant: (variant: LightThemeVariant) => void;
+  setDarkThemeVariant: (variant: DarkThemeVariant) => void;
 }
 
 type PersistedState = Pick<
@@ -106,6 +119,8 @@ type PersistedState = Pick<
   'models'
   | 'modelConfig'
   | 'theme'
+  | 'lightThemeVariant'
+  | 'darkThemeVariant'
   | 'editorTypography'
   | 'promptProfiles'
   | 'activePromptProfileId'
@@ -410,6 +425,8 @@ export const useStore = create<AppState>()(
       promptProfileRevisions: {},
       writingGoals: {},
       theme: 'system',
+      lightThemeVariant: DEFAULT_LIGHT_THEME_VARIANT,
+      darkThemeVariant: DEFAULT_DARK_THEME_VARIANT,
 
       setCurrentBook: (book) => set((state) => {
         if (!book) {
@@ -705,6 +722,8 @@ export const useStore = create<AppState>()(
         };
       }),
       setTheme: (theme) => set({ theme }),
+      setLightThemeVariant: (variant) => set({ lightThemeVariant: sanitizeLightThemeVariant(variant) }),
+      setDarkThemeVariant: (variant) => set({ darkThemeVariant: sanitizeDarkThemeVariant(variant) }),
     }),
     {
       name: 'novelweaver-storage',
@@ -719,6 +738,8 @@ export const useStore = create<AppState>()(
         state.editorTypography = safeTypography;
         state.writingGoals = resolveWritingGoals(state.writingGoals);
         state.modelConfig = resolveModelConfig(state.modelConfig);
+        state.lightThemeVariant = sanitizeLightThemeVariant(state.lightThemeVariant);
+        state.darkThemeVariant = sanitizeDarkThemeVariant(state.darkThemeVariant);
         console.log('Settings rehydrated from local file');
       },
       merge: (persistedState, currentState) => {
@@ -737,12 +758,16 @@ export const useStore = create<AppState>()(
           activePromptProfileId: resolved.activePromptProfileId,
           promptProfileRevisions: resolved.promptProfileRevisions,
           writingGoals: resolveWritingGoals(persisted.writingGoals),
+          lightThemeVariant: sanitizeLightThemeVariant(persisted.lightThemeVariant || currentState.lightThemeVariant),
+          darkThemeVariant: sanitizeDarkThemeVariant(persisted.darkThemeVariant || currentState.darkThemeVariant),
         };
       },
       partialize: (state): PersistedState => ({
         models: state.models,
         modelConfig: state.modelConfig,
         theme: state.theme,
+        lightThemeVariant: state.lightThemeVariant,
+        darkThemeVariant: state.darkThemeVariant,
         editorTypography: state.editorTypography,
         promptProfiles: state.promptProfiles,
         activePromptProfileId: state.activePromptProfileId,

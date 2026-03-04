@@ -9,23 +9,38 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { PersistenceService } from './services/persistence';
 import { db } from './db';
 import { useTaskQueueRunner } from './hooks/useTaskQueueRunner';
+import { resolveThemeMode, resolveThemeVariant } from './services/theme';
 
 const App: React.FC = () => {
-  const { currentBook, isGenerating, generationStatus, theme, isZenMode } = useStore();
+  const { currentBook, isGenerating, generationStatus, theme, isZenMode, lightThemeVariant, darkThemeVariant } = useStore();
   useTaskQueueRunner();
 
   useEffect(() => {
-    // Theme handling
     const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      root.classList.add(systemTheme);
-    } else {
-      root.classList.add(theme);
+    const applyTheme = (prefersDark: boolean) => {
+      const resolvedMode = resolveThemeMode(theme, prefersDark);
+      const resolvedVariant = resolveThemeVariant(resolvedMode, lightThemeVariant, darkThemeVariant);
+
+      root.classList.remove('light', 'dark');
+      root.classList.add(resolvedMode);
+      root.dataset.themeMode = resolvedMode;
+      root.dataset.themeVariant = resolvedVariant;
+    };
+
+    applyTheme(mediaQuery.matches);
+    if (theme !== 'system') return;
+
+    const handleChange = (event: MediaQueryListEvent) => applyTheme(event.matches);
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
     }
-  }, [theme]);
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, [theme, lightThemeVariant, darkThemeVariant]);
 
   useEffect(() => {
     let saveTimer: number | null = null;
