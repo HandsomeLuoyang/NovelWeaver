@@ -90,6 +90,14 @@ export interface ModelConfig {
   enableCreativitySeeds: boolean;
 }
 
+export type DraftCreativeMode = 'balanced' | 'divergent' | 'twist' | 'conflict' | 'dialogue';
+
+export interface DraftGenerationSettings {
+  contextLimit: number;
+  creativeMode: DraftCreativeMode;
+  antiBlock: boolean;
+}
+
 export interface EditorTypographySettings {
   fontFamily: string;
   fontSize: number;

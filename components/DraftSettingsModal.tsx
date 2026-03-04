@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Icons } from './Icons';
+import { DraftGenerationSettings } from '../types';
 
 interface DraftSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (contextLimit: number) => void;
+  onConfirm: (settings: DraftGenerationSettings) => void;
 }
 
 export const DraftSettingsModal: React.FC<DraftSettingsModalProps> = ({
@@ -17,7 +18,11 @@ export const DraftSettingsModal: React.FC<DraftSettingsModalProps> = ({
   const [contextLimit, setContextLimit] = useState(5);
 
   const handleConfirm = () => {
-    onConfirm(contextLimit);
+    onConfirm({
+      contextLimit,
+      creativeMode: 'balanced',
+      antiBlock: true,
+    });
     onClose();
   };
 

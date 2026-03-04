@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useStore } from '../store';
-import { StoryNode, Book } from '../types';
+import { StoryNode, Book, DraftGenerationSettings } from '../types';
 import { draftScene, polishText } from '../services/geminiService';
 import { extractPolishedSegment } from '../services/polishUtils';
 import { db, saveHistory, getLinearContext, getAncestors, getSemanticContext } from '../db';
@@ -24,7 +24,7 @@ export const useAIWriter = () => {
         node: StoryNode,
         book: Book,
         onContentUpdate: (content: string) => void,
-        contextLimit: number = 5,
+        settings: DraftGenerationSettings,
         options?: { persist?: boolean }
     ) => {
         setIsGeneratingInternal(true);
@@ -33,6 +33,7 @@ export const useAIWriter = () => {
         const shouldPersist = options?.persist !== false;
 
         try {
+            const contextLimit = settings.contextLimit;
             const linearContext = await getLinearContext(book.id, node.id, contextLimit);
             const ancestors = await getAncestors(node.id);
             const semanticContext = await getSemanticContext(book.id, node.id, `${node.title}\n${node.summary}`, 3);
