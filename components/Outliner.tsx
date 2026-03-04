@@ -13,15 +13,18 @@ import { StructureVariationModal } from './StructureVariationModal';
 import { NodeRecycleBinModal } from './NodeRecycleBinModal';
 import { SceneBoardModal } from './SceneBoardModal';
 
+const NODE_ACTION_STYLE_STORAGE_KEY = 'zmj.outliner.nodeActionStyle';
+
 // Recursive Node Component
 interface NodeItemProps {
     node: StoryNode;
     level: number;
     generatingNodeIds: string[];
     setGeneratingNodeIds: React.Dispatch<React.SetStateAction<string[]>>;
+    nodeActionStyle: 'label' | 'icon';
 }
 
-const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, setGeneratingNodeIds }) => {
+const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, setGeneratingNodeIds, nodeActionStyle }) => {
     const { expandedNodeIds, toggleNodeExpansion, activeNodeId, setActiveNodeId, currentBook, setGenerating, isGenerating } = useStore();
     const toast = useToast();
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -259,6 +262,12 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
         }
     };
 
+    const isLabelActionStyle = nodeActionStyle === 'label';
+    const actionIconSize = isLabelActionStyle ? 10 : 12;
+    const actionButtonClass = isLabelActionStyle
+        ? 'inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 whitespace-nowrap transition-colors'
+        : 'p-1 rounded transition-colors';
+
     return (
         <>
             <div className="select-none relative">
@@ -299,17 +308,18 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
                     )}
 
                     {/* Quick Actions */}
-                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <div className={`flex items-center opacity-0 group-hover:opacity-100 transition-opacity z-10 ${isLabelActionStyle ? 'gap-0.5 max-w-[62%] overflow-x-auto scrollbar-thin' : ''}`}>
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 setEditTitle(node.title);
                                 setIsEditing(true);
                             }}
-                            className="p-1 hover:bg-primary/20 hover:text-primary rounded mr-1"
+                            className={`${actionButtonClass} ${isLabelActionStyle ? 'hover:text-primary' : 'hover:bg-primary/20 hover:text-primary mr-1'}`}
                             title="重命名"
                         >
-                            <Icons.Edit size={12} />
+                            <Icons.Edit size={actionIconSize} />
+                            {isLabelActionStyle && <span>重命名</span>}
                         </button>
                         {!isLeaf && (
                             <>
@@ -320,25 +330,28 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
                                     }}
                                     disabled={isGenerating}
                                     title="手动创建子节点"
-                                    className="p-1 hover:bg-emerald-500/20 hover:text-emerald-600 rounded mr-1"
+                                    className={`${actionButtonClass} ${isLabelActionStyle ? 'hover:text-emerald-600 disabled:opacity-40' : 'hover:bg-emerald-500/20 hover:text-emerald-600 mr-1'}`}
                                 >
-                                    <Icons.Plus size={12} />
+                                    <Icons.Plus size={actionIconSize} />
+                                    {isLabelActionStyle && <span>新建</span>}
                                 </button>
                                 <button
                                     onClick={handleExpandAI}
                                     disabled={isGenerating}
                                     title="AI 智能扩写"
-                                    className="p-1 hover:bg-primary/20 hover:text-primary rounded mr-1"
+                                    className={`${actionButtonClass} ${isLabelActionStyle ? 'hover:text-primary disabled:opacity-40' : 'hover:bg-primary/20 hover:text-primary mr-1'}`}
                                 >
-                                    <Icons.Sparkles size={12} />
+                                    <Icons.Sparkles size={actionIconSize} />
+                                    {isLabelActionStyle && <span>扩写</span>}
                                 </button>
                                 <button
                                     onClick={handleExpandAllAI}
                                     disabled={isGenerating}
                                     title="生成下一层级完整内容（同层全部节点）"
-                                    className="p-1 hover:bg-cyan-500/20 hover:text-cyan-600 rounded mr-1"
+                                    className={`${actionButtonClass} ${isLabelActionStyle ? 'hover:text-cyan-600 disabled:opacity-40' : 'hover:bg-cyan-500/20 hover:text-cyan-600 mr-1'}`}
                                 >
-                                    <Icons.Layers size={12} />
+                                    <Icons.Layers size={actionIconSize} />
+                                    {isLabelActionStyle && <span>全扩</span>}
                                 </button>
                                 <button
                                     onClick={(e) => {
@@ -347,9 +360,10 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
                                     }}
                                     disabled={isGenerating}
                                     title="结构推演/变体"
-                                    className="p-1 hover:bg-purple-500/20 hover:text-purple-600 rounded mr-1"
+                                    className={`${actionButtonClass} ${isLabelActionStyle ? 'hover:text-purple-600 disabled:opacity-40' : 'hover:bg-purple-500/20 hover:text-purple-600 mr-1'}`}
                                 >
-                                    <Icons.GitBranch size={12} />
+                                    <Icons.GitBranch size={actionIconSize} />
+                                    {isLabelActionStyle && <span>变体</span>}
                                 </button>
                             </>
                         )}
@@ -362,9 +376,10 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
                                     toast.success('节点已移入回收站');
                                 }
                             }}
-                            className="p-1 hover:bg-destructive/10 hover:text-destructive rounded"
+                            className={`${actionButtonClass} ${isLabelActionStyle ? 'hover:text-destructive' : 'hover:bg-destructive/10 hover:text-destructive'}`}
                         >
-                            <Icons.Trash2 size={12} />
+                            <Icons.Trash2 size={actionIconSize} />
+                            {isLabelActionStyle && <span>删除</span>}
                         </button>
                     </div>
                 </div>
@@ -385,6 +400,7 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
                                     level={level + 1}
                                     generatingNodeIds={generatingNodeIds}
                                     setGeneratingNodeIds={setGeneratingNodeIds}
+                                    nodeActionStyle={nodeActionStyle}
                                 />
                             ))}
                             {children.length === 0 && (
@@ -441,6 +457,15 @@ export const Outliner: React.FC = () => {
     const [outlineSearch, setOutlineSearch] = useState('');
     const [showRootCreateModal, setShowRootCreateModal] = useState(false);
     const [generatingNodeIds, setGeneratingNodeIds] = useState<string[]>([]);
+    const [nodeActionStyle, setNodeActionStyle] = useState<'label' | 'icon'>(() => {
+        if (typeof window === 'undefined') return 'label';
+        try {
+            const stored = window.localStorage.getItem(NODE_ACTION_STYLE_STORAGE_KEY);
+            return stored === 'icon' ? 'icon' : 'label';
+        } catch {
+            return 'label';
+        }
+    });
 
     // Reactive root nodes
     const rootNodes = useLiveQuery(
@@ -473,6 +498,14 @@ export const Outliner: React.FC = () => {
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isFloatingOutlinerOpen]);
+
+    useEffect(() => {
+        try {
+            window.localStorage.setItem(NODE_ACTION_STYLE_STORAGE_KEY, nodeActionStyle);
+        } catch {
+            // Ignore persistence failure in restricted environments.
+        }
+    }, [nodeActionStyle]);
 
     if (!currentBook) return null;
 
@@ -544,44 +577,66 @@ export const Outliner: React.FC = () => {
         toast.success('已创建新卷');
     };
 
+    const outlineToolButtonClass = 'inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-border/70 bg-background/40 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-background transition-colors';
+
     return (
         <>
             <div className="w-80 border-r border-border bg-card/50 backdrop-blur-sm flex flex-col h-full z-10 shadow-xl">
-                <div className="p-4 border-b border-border flex items-center justify-between">
-                    <button onClick={() => setCurrentBook(null)} className="text-muted-foreground hover:text-foreground flex items-center text-sm">
+                <div className="p-4 border-b border-border bg-card/70 space-y-3">
+                    <button
+                        onClick={() => setCurrentBook(null)}
+                        className="text-muted-foreground hover:text-foreground flex items-center text-sm"
+                    >
                         <Icons.Library size={14} className="mr-2" />
                         返回书架
                     </button>
-                    <div className="flex items-center gap-2">
+                    <div className="rounded-lg border border-border/60 bg-secondary/20 p-2.5">
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-mono">大纲工具</span>
+                            <span className="text-[10px] text-muted-foreground">STORY TREE</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                onClick={() => setShowRootCreateModal(true)}
+                                className={outlineToolButtonClass}
+                                title="新增卷"
+                            >
+                                <Icons.Plus size={13} />
+                                <span>新增卷</span>
+                            </button>
+                            <button
+                                onClick={() => setIsNodeRecycleBinOpen(true)}
+                                className={outlineToolButtonClass}
+                                title="节点回收站"
+                            >
+                                <Icons.Trash2 size={13} />
+                                <span>回收站</span>
+                            </button>
+                            <button
+                                onClick={() => setIsSceneBoardOpen(true)}
+                                className={outlineToolButtonClass}
+                                title="场景看板"
+                            >
+                                <Icons.Layout size={13} />
+                                <span>场景看板</span>
+                            </button>
+                            <button
+                                onClick={() => setIsFloatingOutlinerOpen(true)}
+                                className={outlineToolButtonClass}
+                                title="浮窗浏览大纲"
+                            >
+                                <Icons.Maximize size={13} />
+                                <span>浮窗大纲</span>
+                            </button>
+                        </div>
                         <button
-                            onClick={() => setShowRootCreateModal(true)}
-                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
-                            title="新增卷"
+                            onClick={() => setNodeActionStyle((prev) => (prev === 'label' ? 'icon' : 'label'))}
+                            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-border/70 bg-background/40 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-background transition-colors"
+                            title="切换节点行内快捷操作的显示样式"
                         >
-                            <Icons.Plus size={14} />
+                            <Icons.Edit size={12} />
+                            <span>{nodeActionStyle === 'label' ? '节点操作：文字版' : '节点操作：图标版'}</span>
                         </button>
-                        <button
-                            onClick={() => setIsNodeRecycleBinOpen(true)}
-                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
-                            title="节点回收站"
-                        >
-                            <Icons.Trash2 size={14} />
-                        </button>
-                        <button
-                            onClick={() => setIsSceneBoardOpen(true)}
-                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
-                            title="场景看板"
-                        >
-                            <Icons.Layout size={14} />
-                        </button>
-                        <button
-                            onClick={() => setIsFloatingOutlinerOpen(true)}
-                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
-                            title="浮窗浏览大纲"
-                        >
-                            <Icons.Maximize size={14} />
-                        </button>
-                        <span className="text-xs text-muted-foreground font-mono">STORY TREE</span>
                     </div>
                 </div>
 
@@ -647,6 +702,7 @@ export const Outliner: React.FC = () => {
                             level={0}
                             generatingNodeIds={generatingNodeIds}
                             setGeneratingNodeIds={setGeneratingNodeIds}
+                            nodeActionStyle={nodeActionStyle}
                         />
                     ))}
                 </div>
@@ -729,6 +785,7 @@ export const Outliner: React.FC = () => {
                                     level={0}
                                     generatingNodeIds={generatingNodeIds}
                                     setGeneratingNodeIds={setGeneratingNodeIds}
+                                    nodeActionStyle={nodeActionStyle}
                                 />
                             ))}
                         </div>
