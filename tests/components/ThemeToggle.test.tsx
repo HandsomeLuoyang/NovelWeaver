@@ -57,4 +57,24 @@ describe('ThemeToggle', () => {
 
     expect(useStore.getState().darkThemeVariant).toBe('forest');
   });
+
+  it('supports selecting newly added light theme variant', async () => {
+    const user = userEvent.setup();
+    render(<ThemeToggle />);
+
+    await user.click(screen.getByRole('button', { name: /主题/ }));
+    await user.click(screen.getByRole('button', { name: /云昼蓝雾/ }));
+
+    expect(useStore.getState().lightThemeVariant).toBe('dawn');
+  });
+
+  it('supports selecting newly added dark theme variant', async () => {
+    const user = userEvent.setup();
+    render(<ThemeToggle />);
+
+    await user.click(screen.getByRole('button', { name: /主题/ }));
+    await user.click(screen.getByRole('button', { name: /星云靛紫/ }));
+
+    expect(useStore.getState().darkThemeVariant).toBe('nebula');
+  });
 });

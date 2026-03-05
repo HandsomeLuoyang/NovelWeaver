@@ -21,8 +21,10 @@ describe('theme service', () => {
 
   it('sanitizes invalid theme variants with defaults', () => {
     expect(sanitizeLightThemeVariant('paper')).toBe('paper');
+    expect(sanitizeLightThemeVariant('dawn')).toBe('dawn');
     expect(sanitizeLightThemeVariant('unknown')).toBe(DEFAULT_LIGHT_THEME_VARIANT);
     expect(sanitizeDarkThemeVariant('forest')).toBe('forest');
+    expect(sanitizeDarkThemeVariant('nebula')).toBe('nebula');
     expect(sanitizeDarkThemeVariant(undefined)).toBe(DEFAULT_DARK_THEME_VARIANT);
   });
 

@@ -1,8 +1,8 @@
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedThemeMode = 'light' | 'dark';
 
-export type LightThemeVariant = 'sunrise' | 'paper' | 'mint';
-export type DarkThemeVariant = 'midnight' | 'forest' | 'graphite';
+export type LightThemeVariant = 'sunrise' | 'paper' | 'mint' | 'dawn' | 'rose';
+export type DarkThemeVariant = 'midnight' | 'forest' | 'graphite' | 'nebula' | 'ember';
 export type ThemeVariant = LightThemeVariant | DarkThemeVariant;
 
 export type ThemeTokenKey =
@@ -61,6 +61,20 @@ export const LIGHT_THEME_OPTIONS: ThemePaletteOption<LightThemeVariant>[] = [
     description: '清爽青绿调，适合长时间编辑。',
     preview: ['168 76% 34%', '212 83% 46%', '160 25% 97%'],
   },
+  {
+    id: 'dawn',
+    mode: 'light',
+    label: '云昼蓝雾',
+    description: '雾蓝界面，冷暖平衡，阅读与工具区更克制。',
+    preview: ['214 84% 56%', '16 86% 58%', '210 40% 98%'],
+  },
+  {
+    id: 'rose',
+    mode: 'light',
+    label: '蔷薇纸墨',
+    description: '柔和粉白背景，玫红主色，适合灵感型创作。',
+    preview: ['336 78% 54%', '212 85% 44%', '336 50% 97%'],
+  },
 ];
 
 export const DARK_THEME_OPTIONS: ThemePaletteOption<DarkThemeVariant>[] = [
@@ -85,10 +99,24 @@ export const DARK_THEME_OPTIONS: ThemePaletteOption<DarkThemeVariant>[] = [
     description: '低饱和深灰，青色主按钮，界面克制。',
     preview: ['199 89% 48%', '42 94% 55%', '220 13% 9%'],
   },
+  {
+    id: 'nebula',
+    mode: 'dark',
+    label: '星云靛紫',
+    description: '深靛星空背景，青紫对比，层次感更强。',
+    preview: ['279 89% 68%', '186 91% 48%', '234 38% 8%'],
+  },
+  {
+    id: 'ember',
+    mode: 'dark',
+    label: '余烬铜夜',
+    description: '暖铜主色搭配深夜底色，适合剧情冲突段落。',
+    preview: ['24 90% 58%', '196 88% 52%', '18 24% 8%'],
+  },
 ];
 
-const LIGHT_VARIANTS = new Set<LightThemeVariant>(['sunrise', 'paper', 'mint']);
-const DARK_VARIANTS = new Set<DarkThemeVariant>(['midnight', 'forest', 'graphite']);
+const LIGHT_VARIANTS = new Set<LightThemeVariant>(['sunrise', 'paper', 'mint', 'dawn', 'rose']);
+const DARK_VARIANTS = new Set<DarkThemeVariant>(['midnight', 'forest', 'graphite', 'nebula', 'ember']);
 
 export const THEME_TOKENS: Record<ThemeVariant, ThemeTokenSet> = {
   sunrise: {
@@ -154,6 +182,48 @@ export const THEME_TOKENS: Record<ThemeVariant, ThemeTokenSet> = {
     input: '165 20% 84%',
     ring: '168 76% 34%',
   },
+  dawn: {
+    background: '210 40% 98%',
+    foreground: '222 40% 14%',
+    card: '210 42% 100%',
+    'card-foreground': '222 40% 14%',
+    popover: '210 42% 100%',
+    'popover-foreground': '222 40% 14%',
+    primary: '214 84% 56%',
+    'primary-foreground': '0 0% 100%',
+    secondary: '210 30% 92%',
+    'secondary-foreground': '222 35% 22%',
+    muted: '210 26% 93%',
+    'muted-foreground': '217 14% 40%',
+    accent: '16 86% 58%',
+    'accent-foreground': '0 0% 100%',
+    destructive: '0 72% 54%',
+    'destructive-foreground': '0 0% 100%',
+    border: '210 23% 84%',
+    input: '210 23% 84%',
+    ring: '214 84% 56%',
+  },
+  rose: {
+    background: '336 50% 97%',
+    foreground: '335 32% 16%',
+    card: '336 35% 99%',
+    'card-foreground': '335 32% 16%',
+    popover: '336 35% 99%',
+    'popover-foreground': '335 32% 16%',
+    primary: '336 78% 54%',
+    'primary-foreground': '0 0% 100%',
+    secondary: '336 24% 91%',
+    'secondary-foreground': '336 25% 24%',
+    muted: '336 22% 92%',
+    'muted-foreground': '336 13% 42%',
+    accent: '212 85% 44%',
+    'accent-foreground': '0 0% 100%',
+    destructive: '0 74% 53%',
+    'destructive-foreground': '0 0% 100%',
+    border: '336 18% 84%',
+    input: '336 18% 84%',
+    ring: '336 78% 54%',
+  },
   midnight: {
     background: '222 47% 4%',
     foreground: '210 40% 98%',
@@ -216,6 +286,48 @@ export const THEME_TOKENS: Record<ThemeVariant, ThemeTokenSet> = {
     border: '220 9% 22%',
     input: '220 9% 22%',
     ring: '199 89% 48%',
+  },
+  nebula: {
+    background: '234 38% 8%',
+    foreground: '224 33% 94%',
+    card: '234 32% 11%',
+    'card-foreground': '224 33% 94%',
+    popover: '234 38% 8%',
+    'popover-foreground': '224 33% 94%',
+    primary: '279 89% 68%',
+    'primary-foreground': '242 38% 10%',
+    secondary: '236 22% 16%',
+    'secondary-foreground': '224 26% 88%',
+    muted: '236 22% 16%',
+    'muted-foreground': '226 16% 66%',
+    accent: '186 91% 48%',
+    'accent-foreground': '236 38% 10%',
+    destructive: '0 72% 57%',
+    'destructive-foreground': '0 0% 100%',
+    border: '235 18% 23%',
+    input: '235 18% 23%',
+    ring: '279 89% 68%',
+  },
+  ember: {
+    background: '18 24% 8%',
+    foreground: '32 22% 93%',
+    card: '18 20% 11%',
+    'card-foreground': '32 22% 93%',
+    popover: '18 24% 8%',
+    'popover-foreground': '32 22% 93%',
+    primary: '24 90% 58%',
+    'primary-foreground': '18 24% 8%',
+    secondary: '18 14% 16%',
+    'secondary-foreground': '32 18% 86%',
+    muted: '18 14% 16%',
+    'muted-foreground': '24 12% 64%',
+    accent: '196 88% 52%',
+    'accent-foreground': '18 24% 8%',
+    destructive: '0 74% 58%',
+    'destructive-foreground': '0 0% 100%',
+    border: '18 12% 24%',
+    input: '18 12% 24%',
+    ring: '24 90% 58%',
   },
 };
 
