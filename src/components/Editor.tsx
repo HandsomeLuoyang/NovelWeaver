@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useStore } from '../store';
@@ -24,6 +25,12 @@ import { PublishWorkflowModal } from './PublishWorkflowModal';
 import { TypographySettingsModal } from './TypographySettingsModal';
 import { PromptManagerModal } from './PromptManagerModal';
 import { CreativeRescueModal } from './CreativeRescueModal';
+import { ForeshadowManagerModal } from './ForeshadowManagerModal';
+import { GlobalSearchReplaceModal } from './GlobalSearchReplaceModal';
+import { TimelineBoardModal } from './TimelineBoardModal';
+import { CharacterArcBoardModal } from './CharacterArcBoardModal';
+import { RewriteWorkbenchModal } from './RewriteWorkbenchModal';
+import { MaterialLibraryModal } from './MaterialLibraryModal';
 
 type FloatingContextPanel = 'node-summary' | 'parent-summary' | 'scene-meta' | 'world' | 'characters' | null;
 type AIReviewState =
@@ -40,8 +47,29 @@ type AIReviewState =
         postContext: string;
     };
 
+interface RewriteDraftContext {
+    sourceText: string;
+    preContext: string;
+    postContext: string;
+}
+
+interface ToolbarMenuPosition {
+    top: number;
+    left: number;
+}
+
 export const Editor: React.FC = () => {
-    const { activeNodeId, currentBook, setCurrentBook, isZenMode, toggleZenMode, editorTypography } = useStore();
+    const {
+        activeNodeId,
+        currentBook,
+        setCurrentBook,
+        isZenMode,
+        toggleZenMode,
+        editorTypography,
+        expandedNodeIds,
+        toggleNodeExpansion,
+        setActiveNodeId,
+    } = useStore();
     const { isGenerating, stopGeneration, handleAIDraft: aiDraft, handleAIPolish: aiPolish } = useAIWriter();
     const toast = useToast();
 
@@ -64,6 +92,15 @@ export const Editor: React.FC = () => {
     const [isTypographySettingsOpen, setIsTypographySettingsOpen] = useState(false);
     const [isPromptManagerOpen, setIsPromptManagerOpen] = useState(false);
     const [isCreativeRescueOpen, setIsCreativeRescueOpen] = useState(false);
+    const [isForeshadowOpen, setIsForeshadowOpen] = useState(false);
+    const [isGlobalReplaceOpen, setIsGlobalReplaceOpen] = useState(false);
+    const [isTimelineBoardOpen, setIsTimelineBoardOpen] = useState(false);
+    const [isCharacterArcOpen, setIsCharacterArcOpen] = useState(false);
+    const [isRewriteWorkbenchOpen, setIsRewriteWorkbenchOpen] = useState(false);
+    const [rewriteContext, setRewriteContext] = useState<RewriteDraftContext | null>(null);
+    const [isMaterialLibraryOpen, setIsMaterialLibraryOpen] = useState(false);
+    const [isToolbarMoreOpen, setIsToolbarMoreOpen] = useState(false);
+    const [toolbarMorePosition, setToolbarMorePosition] = useState<ToolbarMenuPosition>({ top: 0, left: 0 });
 
     // Sidebar Tab State
     const [sidebarTab, setSidebarTab] = useState<'context' | 'chat' | 'history' | 'stats'>('context');
@@ -77,6 +114,8 @@ export const Editor: React.FC = () => {
     const [selectedText, setSelectedText] = useState('');
 
     const editorRef = useRef<HTMLTextAreaElement>(null);
+    const toolbarMoreButtonRef = useRef<HTMLButtonElement>(null);
+    const toolbarMoreMenuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const loadNode = async () => {
@@ -116,7 +155,64 @@ export const Editor: React.FC = () => {
         setAiReview(null);
         setIsReviewPending(false);
         setIsCreativeRescueOpen(false);
+        setIsRewriteWorkbenchOpen(false);
+        setRewriteContext(null);
+        setIsToolbarMoreOpen(false);
     }, [activeNodeId]);
+
+    const recalcToolbarMorePosition = () => {
+        const button = toolbarMoreButtonRef.current;
+        if (!button) return;
+        const rect = button.getBoundingClientRect();
+        const menuWidth = 220;
+        const viewportWidth = window.innerWidth;
+        const left = Math.max(8, Math.min(rect.left, viewportWidth - menuWidth - 8));
+        setToolbarMorePosition({
+            top: rect.bottom + 8,
+            left,
+        });
+    };
+
+    const toggleToolbarMoreMenu = () => {
+        if (!isToolbarMoreOpen) {
+            recalcToolbarMorePosition();
+        }
+        setIsToolbarMoreOpen((prev) => !prev);
+    };
+
+    useEffect(() => {
+        if (!isToolbarMoreOpen) return;
+
+        const handleOutsideClick = (event: MouseEvent) => {
+            const target = event.target as Node | null;
+            const inButton = Boolean(toolbarMoreButtonRef.current && target && toolbarMoreButtonRef.current.contains(target));
+            const inMenu = Boolean(toolbarMoreMenuRef.current && target && toolbarMoreMenuRef.current.contains(target));
+            if (!inButton && !inMenu) {
+                setIsToolbarMoreOpen(false);
+            }
+        };
+
+        const handleEsc = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setIsToolbarMoreOpen(false);
+            }
+        };
+
+        const handleViewportChange = () => {
+            recalcToolbarMorePosition();
+        };
+
+        window.addEventListener('mousedown', handleOutsideClick);
+        window.addEventListener('keydown', handleEsc);
+        window.addEventListener('resize', handleViewportChange);
+        window.addEventListener('scroll', handleViewportChange, true);
+        return () => {
+            window.removeEventListener('mousedown', handleOutsideClick);
+            window.removeEventListener('keydown', handleEsc);
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('scroll', handleViewportChange, true);
+        };
+    }, [isToolbarMoreOpen]);
 
     useEffect(() => {
         if (!floatingContextPanel) return;
@@ -340,6 +436,49 @@ export const Editor: React.FC = () => {
         toast.success('已采纳选中段落');
     };
 
+    const openRewriteWorkbench = () => {
+        if (!selectionRange || !selectedText.trim()) {
+            toast.warning('请先选中一段文本');
+            return;
+        }
+        const preContext = content.substring(0, selectionRange.start);
+        const postContext = content.substring(selectionRange.end);
+        setRewriteContext({
+            sourceText: selectedText,
+            preContext,
+            postContext,
+        });
+        setIsRewriteWorkbenchOpen(true);
+    };
+
+    const handleApplyRewriteVariant = async (variant: string) => {
+        if (!node || !rewriteContext) return;
+        const accepted = variant.trim();
+        if (!accepted) {
+            toast.warning('改写内容为空，无法应用');
+            return;
+        }
+        const finalContent = `${rewriteContext.preContext}${accepted}${rewriteContext.postContext}`;
+        await db.nodes.update(node.id, {
+            content: finalContent,
+            status: finalContent.length > 100 ? 'drafted' : 'outlined',
+        });
+        await saveHistory(node.id, finalContent, 'ai-polish');
+        if (currentBook) {
+            await import('../db').then((mod) => mod.updateBookWordCount(currentBook.id));
+        }
+        const h = await getHistory(node.id);
+        setHistory(h);
+        setHistoryIndex(h.length - 1);
+        setNode({ ...node, content: finalContent, status: finalContent.length > 100 ? 'drafted' : 'outlined' });
+        setContent(finalContent);
+        setSelectionRange(null);
+        setSelectedText('');
+        setIsRewriteWorkbenchOpen(false);
+        setRewriteContext(null);
+        toast.success('改写已应用');
+    };
+
     // Handlers for updating sidebar summaries
     const updateNodeSummary = async (val: string) => {
         if (node) {
@@ -364,6 +503,16 @@ export const Editor: React.FC = () => {
             const latestParent = await db.nodes.get(latestNode.parentId);
             setParentNode(latestParent);
         }
+    };
+
+    const jumpToNode = async (nodeId: string) => {
+        setActiveNodeId(nodeId);
+        const ancestors = await getAncestors(nodeId);
+        ancestors.forEach((ancestor) => {
+            if (!expandedNodeIds.includes(ancestor.id)) {
+                toggleNodeExpansion(ancestor.id);
+            }
+        });
     };
 
     const insertCreativeSnippet = (text: string) => {
@@ -497,6 +646,42 @@ export const Editor: React.FC = () => {
             run: () => setIsCreativeRescueOpen(true)
         },
         {
+            id: 'open-foreshadow-manager',
+            title: '打开伏笔管理器',
+            hint: '埋点 / 推进 / 回收',
+            run: () => setIsForeshadowOpen(true)
+        },
+        {
+            id: 'open-global-replace',
+            title: '打开全书检索替换',
+            hint: '统一术语与命名',
+            run: () => setIsGlobalReplaceOpen(true)
+        },
+        {
+            id: 'open-material-library',
+            title: '打开素材库',
+            hint: 'RAG 素材检索注入',
+            run: () => setIsMaterialLibraryOpen(true)
+        },
+        {
+            id: 'open-rewrite-workbench',
+            title: '打开改写工作台',
+            hint: '三版本候选改写',
+            run: () => openRewriteWorkbench()
+        },
+        {
+            id: 'open-timeline-board',
+            title: '打开时间线看板',
+            hint: '场景时间轴校准',
+            run: () => setIsTimelineBoardOpen(true)
+        },
+        {
+            id: 'open-character-arc-board',
+            title: '打开角色弧线看板',
+            hint: '角色出场轨迹与弧线笔记',
+            run: () => setIsCharacterArcOpen(true)
+        },
+        {
             id: 'toggle-zen',
             title: isZenMode ? '退出禅模式' : '进入禅模式',
             hint: '专注写作视图',
@@ -539,9 +724,11 @@ export const Editor: React.FC = () => {
         letterSpacing: `${editorTypography.letterSpacing}px`,
     };
 
-    const toolbarGroupClass = 'flex items-center gap-1 rounded-xl border border-border/70 bg-secondary/30 px-2 py-1';
-    const toolbarLabelClass = 'px-1 text-[11px] font-semibold text-muted-foreground/90 whitespace-nowrap';
-    const toolbarButtonClass = 'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-background/80 transition-colors whitespace-nowrap';
+    const toolbarGroupClass = 'flex shrink-0 items-center gap-1 rounded-xl border border-border/70 bg-secondary/30 px-1.5 py-1';
+    const toolbarLabelClass = 'px-1 text-[10px] font-semibold text-muted-foreground/90 whitespace-nowrap max-xl:hidden';
+    const toolbarButtonClass = 'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-background/80 transition-colors whitespace-nowrap';
+    const toolbarMenuTriggerClass = 'inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/50 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:bg-background transition-colors whitespace-nowrap';
+    const toolbarMoreItemClass = 'w-full inline-flex items-center gap-2 rounded-md px-2.5 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors';
 
     const renderSceneMetaEditor = (expanded: boolean) => {
         if (node.type !== 'scene') return null;
@@ -578,6 +765,32 @@ export const Editor: React.FC = () => {
                     placeholder="冲突类型（内心/对抗/解谜等）"
                     className={baseInputClass}
                 />
+                <div className="grid grid-cols-1 gap-2">
+                    <input
+                        value={node.meta?.goal || ''}
+                        onChange={(e) => updateSceneMeta({ goal: e.target.value })}
+                        placeholder="场景目标（主角要达成什么）"
+                        className={baseInputClass}
+                    />
+                    <input
+                        value={node.meta?.obstacle || ''}
+                        onChange={(e) => updateSceneMeta({ obstacle: e.target.value })}
+                        placeholder="主要阻力（谁/什么在阻止）"
+                        className={baseInputClass}
+                    />
+                    <input
+                        value={node.meta?.turn || ''}
+                        onChange={(e) => updateSceneMeta({ turn: e.target.value })}
+                        placeholder="场景转折（中段变化）"
+                        className={baseInputClass}
+                    />
+                    <input
+                        value={node.meta?.outcome || ''}
+                        onChange={(e) => updateSceneMeta({ outcome: e.target.value })}
+                        placeholder="场景结果（局势如何改变）"
+                        className={baseInputClass}
+                    />
+                </div>
                 <input
                     value={(node.meta?.participants || []).join('，')}
                     onChange={(e) =>
@@ -694,7 +907,7 @@ export const Editor: React.FC = () => {
     };
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-background relative">
+        <div className="flex-1 min-w-0 flex flex-col h-full bg-background relative">
             {/* Settings Modal */}
             {currentBook && (
                 <BookSettingsModal
@@ -743,8 +956,9 @@ export const Editor: React.FC = () => {
                 </div>
 
                 <div className="px-4 md:px-6 pb-3">
-                    <div className="overflow-x-auto scrollbar-thin">
-                        <div className="flex items-center gap-2 min-w-max">
+                    <div className="relative">
+                        <div className="overflow-x-auto scrollbar-thin">
+                            <div className="flex items-center gap-2 min-w-max pr-4">
                             <div className={toolbarGroupClass}>
                                 <span className={toolbarLabelClass}>创作</span>
                                 <button
@@ -758,21 +972,6 @@ export const Editor: React.FC = () => {
                                     <Icons.Save size={14} />
                                     <span>保存</span>
                                 </button>
-
-                                {selectedText && !isGenerating && (
-                                    <button
-                                        onMouseDown={(e) => {
-                                            e.preventDefault();
-                                            void handleManualSave('manual');
-                                            void handlePolish();
-                                        }}
-                                        className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-purple-600 bg-purple-500/10 hover:bg-purple-500/20 transition-colors whitespace-nowrap animate-in fade-in zoom-in duration-200"
-                                        title="仅润色当前选中内容"
-                                    >
-                                        <Icons.Wand size={14} />
-                                        <span>润色选中</span>
-                                    </button>
-                                )}
 
                                 {node.type === 'scene' && (
                                     isGenerating ? (
@@ -830,22 +1029,6 @@ export const Editor: React.FC = () => {
                                     <Icons.Layers size={14} />
                                     <span>任务队列</span>
                                 </button>
-                                <button
-                                    onClick={() => setIsPluginCenterOpen(true)}
-                                    className={toolbarButtonClass}
-                                    title="插件中心"
-                                >
-                                    <Icons.Puzzle size={14} />
-                                    <span>插件中心</span>
-                                </button>
-                                <button
-                                    onClick={() => setIsPromptManagerOpen(true)}
-                                    className={toolbarButtonClass}
-                                    title="提示词管理"
-                                >
-                                    <Icons.FileText size={14} />
-                                    <span>提示词</span>
-                                </button>
                             </div>
 
                             <div className={toolbarGroupClass}>
@@ -865,6 +1048,18 @@ export const Editor: React.FC = () => {
                                 >
                                     <Icons.CheckCircle size={14} />
                                     <span>发布工作流</span>
+                                </button>
+                            </div>
+
+                            <div className={toolbarGroupClass}>
+                                <button
+                                    ref={toolbarMoreButtonRef}
+                                    onClick={toggleToolbarMoreMenu}
+                                    className={toolbarMenuTriggerClass}
+                                    title="更多功能"
+                                >
+                                    <Icons.More size={14} />
+                                    <span>更多</span>
                                 </button>
                             </div>
 
@@ -930,7 +1125,9 @@ export const Editor: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
+                            </div>
                         </div>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-card/80 to-transparent" />
                     </div>
                 </div>
             </div>
@@ -981,6 +1178,74 @@ export const Editor: React.FC = () => {
                 }}
             />
 
+            <ForeshadowManagerModal
+                isOpen={isForeshadowOpen}
+                onClose={() => setIsForeshadowOpen(false)}
+                book={currentBook}
+                currentNode={node}
+                onJumpToNode={(nodeId) => {
+                    void jumpToNode(nodeId);
+                    setIsForeshadowOpen(false);
+                }}
+            />
+
+            <GlobalSearchReplaceModal
+                isOpen={isGlobalReplaceOpen}
+                onClose={() => setIsGlobalReplaceOpen(false)}
+                book={currentBook}
+                onJumpToNode={(nodeId) => {
+                    void jumpToNode(nodeId);
+                    setIsGlobalReplaceOpen(false);
+                }}
+            />
+
+            <TimelineBoardModal
+                isOpen={isTimelineBoardOpen}
+                onClose={() => setIsTimelineBoardOpen(false)}
+                book={currentBook}
+                onJumpToNode={(nodeId) => {
+                    void jumpToNode(nodeId);
+                    setIsTimelineBoardOpen(false);
+                }}
+            />
+
+            <CharacterArcBoardModal
+                isOpen={isCharacterArcOpen}
+                onClose={() => setIsCharacterArcOpen(false)}
+                book={currentBook}
+                onBookUpdate={(nextBook) => setCurrentBook(nextBook)}
+                onJumpToNode={(nodeId) => {
+                    void jumpToNode(nodeId);
+                    setIsCharacterArcOpen(false);
+                }}
+            />
+
+            <RewriteWorkbenchModal
+                isOpen={isRewriteWorkbenchOpen}
+                onClose={() => {
+                    setIsRewriteWorkbenchOpen(false);
+                    setRewriteContext(null);
+                }}
+                book={currentBook}
+                sourceText={rewriteContext?.sourceText || ''}
+                preContext={rewriteContext?.preContext || ''}
+                postContext={rewriteContext?.postContext || ''}
+                onApplyVariant={(variant) => {
+                    void handleApplyRewriteVariant(variant);
+                }}
+            />
+
+            <MaterialLibraryModal
+                isOpen={isMaterialLibraryOpen}
+                onClose={() => setIsMaterialLibraryOpen(false)}
+                book={currentBook}
+                currentNode={node}
+                onJumpToNode={(nodeId) => {
+                    void jumpToNode(nodeId);
+                    setIsMaterialLibraryOpen(false);
+                }}
+            />
+
             <PluginCenterModal
                 isOpen={isPluginCenterOpen}
                 onClose={() => setIsPluginCenterOpen(false)}
@@ -1001,10 +1266,38 @@ export const Editor: React.FC = () => {
             {/* Workspace Split */}
             <div className="flex-1 flex overflow-hidden">
                 {/* Main Editor / Preview */}
-                <div className={`flex-1 relative flex flex-col transition-all duration-700 ${isGenerating ? "shadow-[inset_0_0_100px_rgba(16,185,129,0.05)]" : ""}`}>
+                <div className={`flex-1 min-w-0 relative flex flex-col transition-all duration-700 ${isGenerating ? "shadow-[inset_0_0_100px_rgba(16,185,129,0.05)]" : ""}`}>
 
                     {/* Generating Visual Indicator - Top Gradient Line */}
                     <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent transition-opacity duration-500 ${isGenerating ? 'opacity-100 animate-pulse' : 'opacity-0'}`} />
+
+                    {selectedText && !isGenerating && (
+                        <div className="absolute top-4 right-6 z-30 flex items-center gap-2 rounded-xl border border-border bg-card/90 backdrop-blur px-2 py-1 shadow-lg">
+                            <button
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    void handleManualSave('manual');
+                                    void handlePolish();
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-purple-600 bg-purple-500/10 hover:bg-purple-500/20 transition-colors whitespace-nowrap"
+                                title="仅润色当前选中内容"
+                            >
+                                <Icons.Wand size={14} />
+                                <span>润色选中</span>
+                            </button>
+                            <button
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    openRewriteWorkbench();
+                                }}
+                                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors whitespace-nowrap"
+                                title="生成 3 版改写并选择应用"
+                            >
+                                <Icons.Edit size={14} />
+                                <span>改写工作台</span>
+                            </button>
+                        </div>
+                    )}
 
                     {viewMode === 'edit' ? (
                         <textarea
@@ -1055,7 +1348,7 @@ export const Editor: React.FC = () => {
 
                 {/* Context Sidebar (Right) - Hidden in Zen Mode */}
                 {!isZenMode && (
-                <div className="w-80 border-l border-border bg-card/50 flex flex-col h-full">
+                <div className="w-80 shrink-0 border-l border-border bg-card/50 flex flex-col h-full">
                     {/* Sidebar Tabs */}
                     <div className="flex border-b border-border">
                         <button
@@ -1292,6 +1585,86 @@ export const Editor: React.FC = () => {
                 </div>
                 )}
             </div>
+
+            {isToolbarMoreOpen && createPortal(
+                <div
+                    ref={toolbarMoreMenuRef}
+                    className="fixed z-[140] w-56 rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur p-1.5 space-y-1"
+                    style={{ top: `${toolbarMorePosition.top}px`, left: `${toolbarMorePosition.left}px` }}
+                >
+                    <button
+                        onClick={() => {
+                            setIsPluginCenterOpen(true);
+                            setIsToolbarMoreOpen(false);
+                        }}
+                        className={toolbarMoreItemClass}
+                    >
+                        <Icons.Puzzle size={13} />
+                        <span>插件中心</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsPromptManagerOpen(true);
+                            setIsToolbarMoreOpen(false);
+                        }}
+                        className={toolbarMoreItemClass}
+                    >
+                        <Icons.FileText size={13} />
+                        <span>提示词管理</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsForeshadowOpen(true);
+                            setIsToolbarMoreOpen(false);
+                        }}
+                        className={toolbarMoreItemClass}
+                    >
+                        <Icons.Target size={13} />
+                        <span>伏笔管理</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsGlobalReplaceOpen(true);
+                            setIsToolbarMoreOpen(false);
+                        }}
+                        className={toolbarMoreItemClass}
+                    >
+                        <Icons.Search size={13} />
+                        <span>全书替换</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsMaterialLibraryOpen(true);
+                            setIsToolbarMoreOpen(false);
+                        }}
+                        className={toolbarMoreItemClass}
+                    >
+                        <Icons.BookOpen size={13} />
+                        <span>素材库</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsTimelineBoardOpen(true);
+                            setIsToolbarMoreOpen(false);
+                        }}
+                        className={toolbarMoreItemClass}
+                    >
+                        <Icons.Calendar size={13} />
+                        <span>时间线看板</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setIsCharacterArcOpen(true);
+                            setIsToolbarMoreOpen(false);
+                        }}
+                        className={toolbarMoreItemClass}
+                    >
+                        <Icons.Users size={13} />
+                        <span>角色弧线看板</span>
+                    </button>
+                </div>,
+                document.body
+            )}
 
             {floatingContextPanel && (
                 <div
