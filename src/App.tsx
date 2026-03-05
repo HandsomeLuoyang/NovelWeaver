@@ -182,15 +182,22 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex h-screen w-screen bg-background text-foreground overflow-hidden font-sans selection:bg-emerald-500/30 relative">
-      {!currentBook ? (
-        <Library />
-      ) : (
-        <div className="flex w-full h-full">
-          {!isZenMode && <Outliner />}
-          <Editor />
-        </div>
-      )}
+    <div className="flex h-screen w-screen bg-background text-foreground overflow-hidden font-sans selection:bg-primary/30 relative">
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <div className="absolute -top-36 left-[8%] h-[28rem] w-[28rem] rounded-full bg-primary/10 blur-[96px]" />
+        <div className="absolute -top-28 right-[12%] h-[24rem] w-[24rem] rounded-full bg-accent/10 blur-[92px]" />
+      </div>
+
+      <div className="relative z-10 flex w-full h-full">
+        {!currentBook ? (
+          <Library />
+        ) : (
+          <>
+            {!isZenMode && <Outliner />}
+            <Editor />
+          </>
+        )}
+      </div>
 
       {/* Toast Notifications */}
       <ToastContainer />
