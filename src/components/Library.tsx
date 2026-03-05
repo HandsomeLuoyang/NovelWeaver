@@ -305,7 +305,7 @@ export const Library: React.FC = () => {
     };
 
     return (
-        <div className="w-full min-h-screen bg-background text-foreground flex flex-col relative overflow-y-auto transition-colors duration-500">
+        <div className="w-full min-h-screen bg-background text-foreground flex flex-col relative overflow-y-auto transition-colors duration-500 antialiased selection:bg-primary/30">
             <ModelSettingsModal isOpen={showModelSettings} onClose={() => setShowModelSettings(false)} />
             <BookRecycleBinModal
                 isOpen={showRecycleBin}
@@ -350,13 +350,13 @@ export const Library: React.FC = () => {
                 initial={{ y: -20, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                className="relative z-10 px-12 py-8"
+                className="relative z-10 px-6 md:px-10 xl:px-12 pt-6 pb-5"
             >
-                <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+                <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4 rounded-2xl px-4 md:px-6 py-3 ui-glass-surface">
                     {/* Logo - Minimalist */}
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 min-w-0">
                         <div className="relative">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20 ui-sheen">
                                 <Icons.Layers className="text-white w-5 h-5" strokeWidth={2.5} />
                             </div>
                         </div>
@@ -371,47 +371,47 @@ export const Library: React.FC = () => {
                     </div>
 
                     {/* Actions - Clean */}
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5 rounded-full ui-toolbar-pill px-2 py-1.5 overflow-x-auto soft-scroll-x">
                         <button
                             onClick={() => setShowManualCreate(true)}
                             disabled={isGenerating || isCreatingManual}
-                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-background/60 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             <Icons.Plus size={14} />
                             手动添加
                         </button>
                         <button
                             onClick={handleImportClick}
-                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-background/60 rounded-lg transition-all"
                         >
                             导入
                         </button>
                         <button
                             onClick={() => setShowRecycleBin(true)}
-                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-background/60 rounded-lg transition-all"
                         >
                             回收站
                         </button>
                         <button
                             onClick={() => setShowDataRecovery(true)}
-                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-background/60 rounded-lg transition-all"
                         >
                             数据恢复
                         </button>
                         <button
                             onClick={() => setShowModelSettings(true)}
-                            className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-background/60 rounded-lg transition-all"
                         >
                             设置
                         </button>
-                        <div className="w-px h-4 bg-border" />
+                        <div className="w-px h-4 bg-border/70 mx-1" />
                         <ThemeToggle />
                     </div>
                 </div>
             </motion.header>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col items-center max-w-[1600px] mx-auto w-full px-12 relative z-10 pt-12 pb-24">
+            <div className="flex-1 flex flex-col items-center max-w-[1600px] mx-auto w-full px-6 md:px-10 xl:px-12 relative z-10 pt-10 pb-24">
 
                 {/* Hero Genesis Section */}
                 <motion.div
@@ -431,7 +431,7 @@ export const Library: React.FC = () => {
                             >
                                 {/* Title */}
                                 <div className="text-center space-y-3">
-                                    <h2 className="text-5xl font-light tracking-tight text-foreground">
+                                    <h2 className="text-5xl font-light tracking-tight text-foreground bg-gradient-to-r from-foreground via-foreground/90 to-primary bg-clip-text text-transparent">
                                         从一句话开始
                                     </h2>
                                     <p className="text-muted-foreground text-lg font-light">
@@ -440,9 +440,9 @@ export const Library: React.FC = () => {
                                 </div>
 
                                 {/* Input */}
-                                <div className="relative group">
+                                <div className="relative group ui-rise-in">
                                     <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/50 to-accent/50 rounded-2xl opacity-0 group-focus-within:opacity-100 blur transition-all duration-500" />
-                                    <div className="relative flex items-end gap-3 p-3 bg-card border border-border/50 rounded-2xl shadow-2xl shadow-black/5 transition-all duration-300 focus-within:border-primary/30">
+                                    <div className="relative flex items-end gap-3 p-3 rounded-2xl transition-all duration-300 focus-within:border-primary/30 ui-subtle-card">
                                         <textarea
                                             value={prompt}
                                             onChange={(e) => setPrompt(e.target.value.slice(0, GENESIS_PROMPT_MAX_CHARS))}
@@ -455,7 +455,7 @@ export const Library: React.FC = () => {
                                         <button
                                             onClick={handleGenesis}
                                             disabled={!prompt.trim()}
-                                            className="self-end px-10 py-4 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden group/btn"
+                                            className="self-end px-10 py-4 bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden group/btn ui-sheen"
                                         >
                                             <span className="relative z-10">创世</span>
                                             <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-700" />

@@ -266,15 +266,15 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
     const actionIconSize = isLabelActionStyle ? 10 : 12;
     const actionButtonClass = isLabelActionStyle
         ? 'inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/80 whitespace-nowrap transition-colors'
-        : 'p-1 rounded transition-colors';
+        : 'p-1 rounded transition-colors hover:bg-secondary/60';
 
     return (
         <>
             <div className="select-none relative">
                 <div
                     className={`
-                group flex items-center py-1.5 px-2 rounded-lg cursor-pointer transition-colors
-                ${isActive ? 'bg-secondary border border-border' : 'hover:bg-secondary/50 border border-transparent'}
+                group flex items-center py-1.5 px-2 rounded-lg cursor-pointer transition-all
+                ${isActive ? 'bg-secondary/80 border border-primary/30 shadow-sm' : 'hover:bg-secondary/50 border border-transparent'}
             `}
                     style={{ marginLeft: `${level * 16}px` }}
                     onClick={handleClick}
@@ -308,7 +308,7 @@ const NodeItem: React.FC<NodeItemProps> = ({ node, level, generatingNodeIds, set
                     )}
 
                     {/* Quick Actions */}
-                    <div className={`flex items-center opacity-0 group-hover:opacity-100 transition-opacity z-10 ${isLabelActionStyle ? 'gap-0.5 max-w-[62%] overflow-x-auto scrollbar-thin' : ''}`}>
+                    <div className={`flex items-center opacity-0 translate-y-1 group-hover:translate-y-0 group-hover:opacity-100 transition-all z-10 ${isLabelActionStyle ? 'gap-0.5 max-w-[62%] overflow-x-auto scrollbar-thin' : ''}`}>
                         <button
                             onClick={(e) => {
                                 e.stopPropagation();
@@ -577,20 +577,20 @@ export const Outliner: React.FC = () => {
         toast.success('已创建新卷');
     };
 
-    const outlineToolButtonClass = 'inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-border/70 bg-background/40 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-background transition-colors';
+    const outlineToolButtonClass = 'inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-border/70 bg-background/40 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-background transition-all ui-sheen';
 
     return (
         <>
-            <div className="w-80 border-r border-border bg-card/50 backdrop-blur-sm flex flex-col h-full z-10 shadow-xl">
-                <div className="p-4 border-b border-border bg-card/70 space-y-3">
+            <div className="w-80 border-r border-border/80 bg-card/55 backdrop-blur-sm flex flex-col h-full z-10 shadow-xl">
+                <div className="p-4 border-b border-border bg-card/75 space-y-3">
                     <button
                         onClick={() => setCurrentBook(null)}
-                        className="text-muted-foreground hover:text-foreground flex items-center text-sm"
+                        className="text-muted-foreground hover:text-foreground flex items-center text-sm transition-colors"
                     >
                         <Icons.Library size={14} className="mr-2" />
                         返回书架
                     </button>
-                    <div className="rounded-lg border border-border/60 bg-secondary/20 p-2.5">
+                    <div className="rounded-lg border border-border/60 bg-secondary/20 p-2.5 ui-subtle-card">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-[11px] uppercase tracking-wide text-muted-foreground font-mono">大纲工具</span>
                             <span className="text-[10px] text-muted-foreground">STORY TREE</span>
@@ -631,7 +631,7 @@ export const Outliner: React.FC = () => {
                         </div>
                         <button
                             onClick={() => setNodeActionStyle((prev) => (prev === 'label' ? 'icon' : 'label'))}
-                            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-border/70 bg-background/40 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-background transition-colors"
+                            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-border/70 bg-background/40 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-background transition-all ui-sheen"
                             title="切换节点行内快捷操作的显示样式"
                         >
                             <Icons.Edit size={12} />
@@ -714,7 +714,7 @@ export const Outliner: React.FC = () => {
                     onClick={() => setIsFloatingOutlinerOpen(false)}
                 >
                     <div
-                        className="w-full max-w-6xl h-[88vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
+                        className="w-full max-w-6xl h-[88vh] border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-glass-surface ui-rise-in"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">

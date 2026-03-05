@@ -28,14 +28,14 @@ export const ThemeToggle: React.FC = () => {
     const [panelPosition, setPanelPosition] = useState<{ top: number; left: number; width: number }>({
         top: 0,
         left: 0,
-        width: 360,
+        width: 420,
     });
 
     const updatePanelPosition = () => {
         if (!triggerRef.current) return;
         const rect = triggerRef.current.getBoundingClientRect();
-        const width = 360;
         const viewportPadding = 12;
+        const width = Math.min(420, Math.max(280, window.innerWidth - viewportPadding * 2));
         const proposedLeft = rect.right - width;
         const minLeft = viewportPadding;
         const maxLeft = window.innerWidth - width - viewportPadding;
@@ -101,7 +101,7 @@ export const ThemeToggle: React.FC = () => {
         `px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
             theme === value
                 ? 'bg-primary text-primary-foreground shadow-sm'
-                : 'bg-secondary/60 text-muted-foreground hover:text-foreground'
+                : 'bg-secondary/70 text-muted-foreground hover:text-foreground hover:bg-secondary'
         }`
     );
 
@@ -111,7 +111,7 @@ export const ThemeToggle: React.FC = () => {
                 type="button"
                 ref={triggerRef}
                 onClick={() => setIsOpen((open) => !open)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border text-sm text-foreground hover:border-primary/50 transition-colors"
+                className="ui-sheen inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full ui-glass-surface text-sm text-foreground hover:border-primary/50 transition-colors"
                 title="主题与配色"
             >
                 <Palette className="w-4 h-4 text-primary" />
@@ -121,11 +121,16 @@ export const ThemeToggle: React.FC = () => {
             {isOpen && typeof document !== 'undefined' && createPortal(
                 <div
                     ref={panelRef}
-                    className="fixed rounded-2xl border border-border bg-card shadow-2xl p-4 z-[1000] space-y-4"
+                    className="fixed rounded-2xl ui-glass-surface shadow-2xl p-4 z-[1000] space-y-4 ui-rise-in max-h-[80vh] overflow-y-auto"
                     style={{ top: panelPosition.top, left: panelPosition.left, width: panelPosition.width }}
                 >
                     <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">显示模式</p>
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">显示模式</p>
+                            <span className="text-[11px] rounded-full px-2 py-0.5 bg-secondary/70 text-muted-foreground">
+                                共 {LIGHT_THEME_OPTIONS.length + DARK_THEME_OPTIONS.length} 套主题
+                            </span>
+                        </div>
                         <div className="flex items-center gap-2">
                             <button type="button" onClick={() => setTheme('light')} className={modeButtonClass('light')}>
                                 <span className="inline-flex items-center gap-1">
@@ -159,10 +164,10 @@ export const ThemeToggle: React.FC = () => {
                                     key={option.id}
                                     type="button"
                                     onClick={() => setLightThemeVariant(option.id)}
-                                    className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
+                                    className={`w-full text-left rounded-xl border px-3 py-2 transition-all ui-sheen ${
                                         lightThemeVariant === option.id
-                                            ? 'border-primary bg-primary/10'
-                                            : 'border-border hover:border-primary/40'
+                                            ? 'border-primary bg-primary/10 shadow-sm'
+                                            : 'border-border hover:border-primary/40 hover:bg-secondary/30'
                                     }`}
                                 >
                                     <div className="flex items-center justify-between">
@@ -194,10 +199,10 @@ export const ThemeToggle: React.FC = () => {
                                     key={option.id}
                                     type="button"
                                     onClick={() => setDarkThemeVariant(option.id)}
-                                    className={`w-full text-left rounded-xl border px-3 py-2 transition-colors ${
+                                    className={`w-full text-left rounded-xl border px-3 py-2 transition-all ui-sheen ${
                                         darkThemeVariant === option.id
-                                            ? 'border-primary bg-primary/10'
-                                            : 'border-border hover:border-primary/40'
+                                            ? 'border-primary bg-primary/10 shadow-sm'
+                                            : 'border-border hover:border-primary/40 hover:bg-secondary/30'
                                     }`}
                                 >
                                     <div className="flex items-center justify-between">

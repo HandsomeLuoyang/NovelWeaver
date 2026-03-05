@@ -41,7 +41,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete, onE
         >
             <div
                 onClick={onClick}
-                className="relative h-full bg-card border border-border/50 rounded-2xl p-6 cursor-pointer transition-all duration-300 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5 flex flex-col"
+                className="relative h-full rounded-2xl p-6 cursor-pointer transition-all duration-300 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-0.5 flex flex-col ui-subtle-card"
             >
                 {/* Gradient accent bar */}
                 <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${scheme.bg} rounded-t-2xl opacity-60`} />
@@ -62,7 +62,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete, onE
                     </div>
 
                     {/* Icon */}
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${scheme.bg} border ${scheme.border} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-300`}>
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${scheme.bg} border ${scheme.border} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-300 ui-sheen`}>
                         <Icons.BookOpen className={`w-5 h-5 ${scheme.accent}`} strokeWidth={2} />
                     </div>
                 </div>
@@ -94,7 +94,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete, onE
                                 <Icons.Download size={14} strokeWidth={2} />
                             </button>
                             {showExportMenu && (
-                                <div className="absolute bottom-full right-0 mb-2 bg-card rounded-xl shadow-xl border border-border/50 backdrop-blur-xl py-1.5 min-w-[140px] z-50">
+                                <div className="absolute bottom-full right-0 mb-2 rounded-xl shadow-xl border border-border/50 backdrop-blur-xl py-1.5 min-w-[140px] z-50 ui-glass-surface">
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
