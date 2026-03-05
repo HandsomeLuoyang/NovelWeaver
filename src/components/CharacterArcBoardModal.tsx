@@ -93,7 +93,7 @@ export const CharacterArcBoardModal: React.FC<CharacterArcBoardModalProps> = ({
   return createPortal(
     <div className="fixed inset-0 z-[129] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="w-full max-w-6xl h-[88vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-6xl h-[88vh] border border-border bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-rise-in"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">

@@ -714,7 +714,7 @@ export const Outliner: React.FC = () => {
                     onClick={() => setIsFloatingOutlinerOpen(false)}
                 >
                     <div
-                        className="w-full max-w-6xl h-[88vh] border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-glass-surface ui-rise-in"
+                        className="w-full max-w-6xl h-[88vh] border border-border bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-rise-in"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">

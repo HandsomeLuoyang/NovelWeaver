@@ -82,7 +82,7 @@ export const ManualBookModal: React.FC<Props> = ({
       }}
     >
       <div
-        className="w-full max-w-5xl h-[88vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-5xl h-[88vh] border border-border bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-rise-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">

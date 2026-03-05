@@ -44,7 +44,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
   return createPortal(
     <div className="fixed inset-0 z-[130] bg-black/50 backdrop-blur-sm flex items-start justify-center pt-[12vh] px-4" onClick={onClose}>
       <div
-        className="w-full max-w-2xl bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+        className="w-full max-w-2xl border border-border bg-card rounded-2xl shadow-2xl overflow-hidden ui-rise-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card/80">

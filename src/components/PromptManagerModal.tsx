@@ -246,7 +246,7 @@ export const PromptManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={handleClose}>
       <div
-        className="bg-card border border-border w-full max-w-6xl h-[88vh] rounded-2xl shadow-2xl flex overflow-hidden"
+        className="border border-border bg-card w-full max-w-6xl h-[88vh] rounded-2xl shadow-2xl flex overflow-hidden ui-rise-in"
         onClick={(e) => e.stopPropagation()}
       >
         <aside className="w-80 border-r border-border bg-secondary/20 flex flex-col">

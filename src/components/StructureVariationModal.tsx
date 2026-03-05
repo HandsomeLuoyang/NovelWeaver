@@ -172,7 +172,7 @@ export const StructureVariationModal: React.FC<StructureVariationModalProps> = (
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", duration: 0.5 }}
-            className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-[95vw] max-w-7xl h-[90vh] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700"
+            className="relative rounded-2xl shadow-2xl w-[95vw] max-w-7xl h-[90vh] flex flex-col overflow-hidden border border-border bg-card ui-rise-in"
         >
           {/* Header */}
           <div className="px-8 py-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-white dark:bg-gray-900 z-10">

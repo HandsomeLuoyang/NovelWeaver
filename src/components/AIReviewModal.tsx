@@ -61,7 +61,7 @@ export const AIReviewModal: React.FC<AIReviewModalProps> = ({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-6xl h-[86vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-6xl h-[86vh] border border-border bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-rise-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card/70">

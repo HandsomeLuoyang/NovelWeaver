@@ -94,7 +94,7 @@ export const BookCard: React.FC<BookCardProps> = ({ book, onClick, onDelete, onE
                                 <Icons.Download size={14} strokeWidth={2} />
                             </button>
                             {showExportMenu && (
-                                <div className="absolute bottom-full right-0 mb-2 rounded-xl shadow-xl border border-border/50 backdrop-blur-xl py-1.5 min-w-[140px] z-50 ui-glass-surface">
+                                <div className="absolute bottom-full right-0 mb-2 rounded-xl shadow-xl border border-border/50 bg-card py-1.5 min-w-[140px] z-50">
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();

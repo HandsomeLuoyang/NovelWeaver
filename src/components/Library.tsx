@@ -352,7 +352,7 @@ export const Library: React.FC = () => {
                 transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
                 className="relative z-10 px-6 md:px-10 xl:px-12 pt-6 pb-5"
             >
-                <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4 rounded-2xl px-4 md:px-6 py-3 ui-glass-surface">
+                <div className="max-w-[1600px] mx-auto flex items-center justify-between gap-4 rounded-2xl px-4 md:px-6 py-3 border border-border/70 bg-card/85 backdrop-blur-sm shadow-lg">
                     {/* Logo - Minimalist */}
                     <div className="flex items-center gap-4 min-w-0">
                         <div className="relative">

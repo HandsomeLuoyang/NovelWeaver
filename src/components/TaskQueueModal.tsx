@@ -262,7 +262,7 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
   return createPortal(
     <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="w-full max-w-5xl h-[86vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-5xl h-[86vh] border border-border bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-rise-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card/70">

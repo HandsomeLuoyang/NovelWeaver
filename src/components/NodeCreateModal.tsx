@@ -41,7 +41,7 @@ export const NodeCreateModal: React.FC<NodeCreateModalProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
-      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="border border-border bg-card rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col ui-rise-in">
         {/* Header */}
         <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card/60">
           <h2 className="text-lg font-bold text-foreground flex items-center gap-2">

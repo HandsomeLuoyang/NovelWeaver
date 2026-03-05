@@ -226,7 +226,7 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-6xl h-[88vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col">
+            <div className="relative w-full max-w-6xl h-[88vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col ui-rise-in">
                 <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-primary/20 via-primary/5 to-accent/20 pointer-events-none" />
 
                 <div className="relative z-10 px-6 py-5 border-b border-border/70 bg-card/85 backdrop-blur">
@@ -641,7 +641,7 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                         onClick={() => setEditingModelId(null)}
                     >
                         <div
-                            className="w-full max-w-2xl rounded-2xl border border-primary/30 bg-card shadow-2xl p-5 space-y-4"
+                            className="w-full max-w-2xl rounded-2xl border border-primary/30 bg-card shadow-2xl p-5 space-y-4 ui-rise-in"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="flex items-center justify-between">

@@ -174,7 +174,7 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-card border border-border w-full max-w-4xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="border border-border bg-card w-full max-w-4xl h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200 ui-rise-in">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/50">
           <h2 className="text-lg font-bold text-foreground flex items-center">
