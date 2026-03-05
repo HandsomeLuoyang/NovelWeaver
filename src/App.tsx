@@ -193,7 +193,17 @@ const App: React.FC = () => {
           <Library />
         ) : (
           <>
-            {!isZenMode && <Outliner />}
+            <div
+              className={`shrink-0 overflow-hidden transition-[width,opacity,transform] duration-300 ease-in-out ${
+                isZenMode
+                  ? 'w-0 opacity-0 -translate-x-3 pointer-events-none'
+                  : 'w-80 opacity-100 translate-x-0'
+              }`}
+            >
+              <div className="h-full w-80">
+                <Outliner />
+              </div>
+            </div>
             <Editor />
           </>
         )}

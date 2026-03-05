@@ -937,26 +937,28 @@ export const Editor: React.FC = () => {
 
             {/* Header */}
             <div className="border-b border-border/80 bg-card/65 backdrop-blur z-20">
-                <div className="px-4 md:px-6 py-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center min-w-0">
-                        <span className={`text-xs uppercase font-mono mr-3 px-2 py-0.5 rounded ${node.type === 'scene' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                            {getNodeTypeName(node.type)}
-                        </span>
-                        <h2 className="font-semibold text-foreground truncate max-w-[180px] md:max-w-xl">{node.title}</h2>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap">
-                        {(isGenerating || isReviewPending) && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5">
-                                <Icons.Loader2 size={12} className="animate-spin" />
-                                AI 处理中
+                <div className="px-4 md:px-6 py-3">
+                    <div className="mx-auto w-full max-w-[1420px] flex items-center justify-between gap-3">
+                        <div className="flex items-center min-w-0">
+                            <span className={`text-xs uppercase font-mono mr-3 px-2 py-0.5 rounded ${node.type === 'scene' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'}`}>
+                                {getNodeTypeName(node.type)}
                             </span>
-                        )}
-                        <span className="hidden md:inline">命令面板：Ctrl/Cmd + K</span>
+                            <h2 className="font-semibold text-foreground truncate max-w-[180px] md:max-w-xl">{node.title}</h2>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground whitespace-nowrap">
+                            {(isGenerating || isReviewPending) && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5">
+                                    <Icons.Loader2 size={12} className="animate-spin" />
+                                    AI 处理中
+                                </span>
+                            )}
+                            <span className="hidden md:inline">命令面板：Ctrl/Cmd + K</span>
+                        </div>
                     </div>
                 </div>
 
                 <div className="px-4 md:px-6 pb-3">
-                    <div className="relative">
+                    <div className="relative mx-auto w-full max-w-[1420px]">
                         <div className="overflow-x-auto scrollbar-thin soft-scroll-x">
                             <div className="flex items-center gap-2 min-w-max pr-4">
                             <div className={toolbarGroupClass}>
@@ -1272,7 +1274,7 @@ export const Editor: React.FC = () => {
                     <div className={`absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent transition-opacity duration-500 ${isGenerating ? 'opacity-100 animate-pulse' : 'opacity-0'}`} />
 
                     {selectedText && !isGenerating && (
-                        <div className="absolute top-4 right-6 z-30 flex items-center gap-2 rounded-xl border border-border bg-card/90 backdrop-blur px-2 py-1 shadow-lg ui-glass-surface ui-rise-in">
+                        <div className="absolute top-4 right-6 z-30 flex items-center gap-2 rounded-xl border border-border bg-card/90 backdrop-blur px-2 py-1 shadow-lg ui-rise-in">
                             <button
                                 onMouseDown={(e) => {
                                     e.preventDefault();
@@ -1341,14 +1343,20 @@ export const Editor: React.FC = () => {
                         </div>
                     )}
                     {/* Word Count Indicator */}
-                    <div className="absolute bottom-4 right-6 text-xs text-muted-foreground font-mono bg-card/80 px-2 py-1 rounded border border-border pointer-events-none backdrop-blur z-20 transition-opacity opacity-50 hover:opacity-100 ui-glass-surface">
+                    <div className="absolute bottom-4 right-6 text-xs text-muted-foreground font-mono bg-card/80 px-2 py-1 rounded border border-border pointer-events-none backdrop-blur z-20 transition-opacity opacity-50 hover:opacity-100">
                         {content.length} 字
                     </div>
                 </div>
 
-                {/* Context Sidebar (Right) - Hidden in Zen Mode */}
-                {!isZenMode && (
-                <div className="w-80 shrink-0 border-l border-border/80 bg-card/55 flex flex-col h-full backdrop-blur-sm">
+                {/* Context Sidebar (Right) */}
+                <div
+                    className={`shrink-0 overflow-hidden transition-[width,opacity,transform,border-color] duration-300 ease-in-out ${
+                        isZenMode
+                            ? 'w-0 opacity-0 translate-x-3 border-l-transparent pointer-events-none'
+                            : 'w-80 opacity-100 translate-x-0 border-l border-border/80'
+                    }`}
+                >
+                <div className="w-80 bg-card/55 flex flex-col h-full backdrop-blur-sm">
                     {/* Sidebar Tabs */}
                     <div className="flex border-b border-border">
                         <button
@@ -1583,13 +1591,13 @@ export const Editor: React.FC = () => {
                         </>
                     )}
                 </div>
-                )}
+                </div>
             </div>
 
             {isToolbarMoreOpen && createPortal(
                 <div
                     ref={toolbarMoreMenuRef}
-                    className="fixed z-[140] w-56 rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur p-1.5 space-y-1 ui-glass-surface ui-rise-in"
+                    className="fixed z-[140] w-56 rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur p-1.5 space-y-1 ui-rise-in"
                     style={{ top: `${toolbarMorePosition.top}px`, left: `${toolbarMorePosition.left}px` }}
                 >
                     <button
@@ -1672,7 +1680,7 @@ export const Editor: React.FC = () => {
                     onClick={() => setFloatingContextPanel(null)}
                 >
                     <div
-                        className="w-full max-w-5xl h-[86vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-glass-surface ui-rise-in"
+                        className="w-full max-w-5xl h-[86vh] border border-border bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-rise-in"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="px-6 py-4 border-b border-border bg-card/80 flex items-center justify-between gap-4">

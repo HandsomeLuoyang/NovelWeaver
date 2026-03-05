@@ -22,7 +22,7 @@ export const TypographySettingsModal: React.FC<TypographySettingsModalProps> = (
   return createPortal(
     <div className="fixed inset-0 z-[128] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
-        className="w-full max-w-5xl h-[84vh] bg-card border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        className="w-full max-w-5xl h-[84vh] border border-border bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col ui-rise-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-border bg-card/70 flex items-center justify-between">
@@ -45,17 +45,23 @@ export const TypographySettingsModal: React.FC<TypographySettingsModalProps> = (
           <div className="border-r border-border overflow-y-auto p-5 space-y-5 scrollbar-thin">
             <div>
               <label className="text-xs text-muted-foreground block mb-2">字体</label>
-              <select
-                value={editorTypography.fontFamily}
-                onChange={(e) => updateEditorTypography({ fontFamily: e.target.value })}
-                className="w-full bg-input border border-border rounded p-2.5 text-sm focus:outline-none focus:border-primary text-foreground"
-              >
-                {FONT_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={editorTypography.fontFamily}
+                  onChange={(e) => updateEditorTypography({ fontFamily: e.target.value })}
+                  className="w-full appearance-none rounded-lg border border-border bg-secondary/40 px-3 py-2.5 pr-10 text-sm text-foreground transition-colors focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                >
+                  {FONT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <Icons.ChevronDown
+                  size={16}
+                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
+              </div>
             </div>
 
             <div>
