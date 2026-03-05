@@ -34,6 +34,7 @@ const buildSceneMetaLines = (node: StoryNode) => {
 export const exportAsMarkdown = async (book: Book): Promise<string> => {
   const nodes = await getBookNodes(book.id);
   const facts = await db.facts.where('bookId').equals(book.id).toArray();
+  const materials = await db.materials.where('bookId').equals(book.id).toArray();
 
   let markdown = `# ${book.title}\n\n`;
   markdown += `> ${book.premise}\n\n`;
@@ -58,6 +59,18 @@ export const exportAsMarkdown = async (book: Book): Promise<string> => {
       .sort((a, b) => Number(b.locked) - Number(a.locked) || b.updatedAt - a.updatedAt)
       .forEach((fact) => {
         markdown += `- ${fact.locked ? '[锁定] ' : ''}${fact.statement}\n`;
+      });
+    markdown += `\n`;
+  }
+
+  if (materials.length > 0) {
+    markdown += `## 素材库\n\n`;
+    materials
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .forEach((entry) => {
+        const tags = (entry.tags || []).length > 0 ? `（${entry.tags.join('、')}）` : '';
+        markdown += `- [${entry.type}] ${entry.title}${tags}\n`;
+        markdown += `  - ${entry.content.slice(0, 140)}${entry.content.length > 140 ? '...' : ''}\n`;
       });
     markdown += `\n`;
   }
@@ -109,6 +122,7 @@ export const exportAsMarkdown = async (book: Book): Promise<string> => {
 export const exportAsText = async (book: Book): Promise<string> => {
   const nodes = await getBookNodes(book.id);
   const facts = await db.facts.where('bookId').equals(book.id).toArray();
+  const materials = await db.materials.where('bookId').equals(book.id).toArray();
 
   let text = `${book.title}\n`;
   text += `${'='.repeat(book.title.length)}\n\n`;
@@ -133,6 +147,18 @@ export const exportAsText = async (book: Book): Promise<string> => {
       .sort((a, b) => Number(b.locked) - Number(a.locked) || b.updatedAt - a.updatedAt)
       .forEach((fact, idx) => {
         text += `${idx + 1}. ${fact.locked ? '[锁定] ' : ''}${fact.statement}\n`;
+      });
+    text += `\n`;
+  }
+
+  if (materials.length > 0) {
+    text += `【素材库】\n`;
+    materials
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .forEach((entry, idx) => {
+        const tags = (entry.tags || []).length > 0 ? `（${entry.tags.join('、')}）` : '';
+        text += `${idx + 1}. [${entry.type}] ${entry.title}${tags}\n`;
+        text += `   ${entry.content.slice(0, 140)}${entry.content.length > 140 ? '...' : ''}\n`;
       });
     text += `\n`;
   }

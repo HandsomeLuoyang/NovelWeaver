@@ -9,6 +9,8 @@ import {
   RecoverySnapshot,
   FactEntry,
   FactCandidate,
+  ForeshadowEntry,
+  MaterialEntry,
 } from '../types';
 
 interface ContentBackup {
@@ -21,6 +23,8 @@ interface ContentBackup {
   deletedNodes: DeletedNodeEntry[];
   facts: FactEntry[];
   factCandidates: FactCandidate[];
+  foreshadows: ForeshadowEntry[];
+  materials: MaterialEntry[];
 }
 
 export interface IntegrityReport {
@@ -79,6 +83,8 @@ const normalizeBackup = (payload: Partial<ContentBackup> | null | undefined): Co
     deletedNodes: Array.isArray(safe.deletedNodes) ? safe.deletedNodes : [],
     facts: Array.isArray(safe.facts) ? safe.facts : [],
     factCandidates: Array.isArray(safe.factCandidates) ? safe.factCandidates : [],
+    foreshadows: Array.isArray(safe.foreshadows) ? safe.foreshadows : [],
+    materials: Array.isArray(safe.materials) ? safe.materials : [],
   };
 };
 
@@ -111,6 +117,16 @@ const validateBackup = (payload: Partial<ContentBackup> | null | undefined): Int
       issues.push(`候选事实 ${candidate.statement.slice(0, 20)}... 的 bookId 不存在`);
     }
   });
+  normalized.foreshadows.forEach((entry) => {
+    if (!bookIds.has(entry.bookId)) {
+      issues.push(`伏笔 ${entry.title.slice(0, 20)}... 的 bookId 不存在`);
+    }
+  });
+  normalized.materials.forEach((material) => {
+    if (!bookIds.has(material.bookId)) {
+      issues.push(`素材 ${material.title.slice(0, 20)}... 的 bookId 不存在`);
+    }
+  });
 
   const nodeMap = new Map(normalized.nodes.map((node) => [node.id, node]));
   normalized.nodes.forEach((node) => {
@@ -141,6 +157,8 @@ const collectBackupPayload = async (): Promise<ContentBackup> => {
   const deletedNodes = await db.deletedNodes.toArray();
   const facts = await db.facts.toArray();
   const factCandidates = await db.factCandidates.toArray();
+  const foreshadows = await db.foreshadows.toArray();
+  const materials = await db.materials.toArray();
 
   return {
     version: 1,
@@ -152,11 +170,13 @@ const collectBackupPayload = async (): Promise<ContentBackup> => {
     deletedNodes,
     facts,
     factCandidates,
+    foreshadows,
+    materials,
   };
 };
 
 const applyBackupPayload = async (payload: ContentBackup) => {
-  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes, db.facts, db.factCandidates], async () => {
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes, db.facts, db.factCandidates, db.foreshadows, db.materials], async () => {
     await db.books.clear();
     await db.nodes.clear();
     await db.history.clear();
@@ -165,6 +185,8 @@ const applyBackupPayload = async (payload: ContentBackup) => {
     await db.deletedNodes.clear();
     await db.facts.clear();
     await db.factCandidates.clear();
+    await db.foreshadows.clear();
+    await db.materials.clear();
 
     if (payload.books.length > 0) {
       await db.books.bulkAdd(payload.books);
@@ -189,6 +211,12 @@ const applyBackupPayload = async (payload: ContentBackup) => {
     }
     if (payload.factCandidates.length > 0) {
       await db.factCandidates.bulkAdd(payload.factCandidates);
+    }
+    if (payload.foreshadows.length > 0) {
+      await db.foreshadows.bulkAdd(payload.foreshadows);
+    }
+    if (payload.materials.length > 0) {
+      await db.materials.bulkAdd(payload.materials);
     }
   });
 };

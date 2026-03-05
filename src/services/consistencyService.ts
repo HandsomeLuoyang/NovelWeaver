@@ -205,6 +205,27 @@ export const runConsistencyCheck = (book: Book, nodes: StoryNode[], facts: FactE
       });
     });
 
+  // 5.1) Scene goal card completeness (goal/obstacle/turn/outcome)
+  nodes
+    .filter((node) => node.type === 'scene' && node.status === 'drafted')
+    .forEach((node) => {
+      const meta = node.meta || {};
+      const missingItems: string[] = [];
+      if (!(meta.goal || '').trim()) missingItems.push('目标');
+      if (!(meta.obstacle || '').trim()) missingItems.push('阻力');
+      if (!(meta.turn || '').trim()) missingItems.push('转折');
+      if (!(meta.outcome || '').trim()) missingItems.push('结果');
+
+      if (missingItems.length === 0) return;
+      findings.push({
+        id: `scene-goal-card-${node.id}`,
+        severity: 'medium',
+        title: '场景目标卡未补全',
+        description: `场景「${node.title}」缺少：${missingItems.join('、')}。建议补齐后再发布。`,
+        nodeId: node.id,
+      });
+    });
+
   // 6) Timeline regression (heuristic by explicit day markers)
   const linearScenes = buildLinearScenes(nodes);
   let lastDay: number | null = null;

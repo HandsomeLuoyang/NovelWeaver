@@ -9,6 +9,7 @@ import {
 } from './openaiCompat';
 import { createDefaultPromptProfile, renderPrompt } from './promptProfiles';
 import { buildFactPromptContext } from './factLibrary';
+import { buildMaterialPromptContext } from './materialLibrary';
 
 // Type definitions for internal task identification
 type TaskType = PromptTaskType;
@@ -94,6 +95,34 @@ const getPromptControls = (task: TaskType, config: TaskRuntimeConfig) => {
   }
 
   return parts.length > 0 ? `${parts.join('\n\n')}\n` : '';
+};
+
+const buildStyleBiblePrompt = (book?: Book | null) => {
+  if (!book) return '';
+
+  const segments: string[] = [];
+  if (book.writingStyle) {
+    segments.push(`目标文风: ${book.writingStyle}`);
+  }
+  if (Array.isArray(book.styleReferences) && book.styleReferences.length > 0) {
+    segments.push(`参考作品: ${book.styleReferences.join('、')}`);
+  }
+
+  const rules = book.styleBible?.rules?.trim();
+  if (rules) {
+    segments.push(`风格规则:\n${rules}`);
+  }
+
+  if (Array.isArray(book.styleBible?.bannedTerms) && book.styleBible.bannedTerms.length > 0) {
+    segments.push(`禁用词: ${book.styleBible.bannedTerms.join('、')}`);
+  }
+
+  if (Array.isArray(book.styleBible?.sentencePatterns) && book.styleBible.sentencePatterns.length > 0) {
+    segments.push(`句式偏好: ${book.styleBible.sentencePatterns.join('；')}`);
+  }
+
+  if (segments.length === 0) return '';
+  return `[风格圣经]\n${segments.join('\n')}`;
 };
 
 interface TaskPromptOptions {
@@ -210,6 +239,7 @@ const updateStatus = (status: string) => {
 };
 
 const EMPTY_FACT_CONTEXT = buildFactPromptContext([]);
+const EMPTY_MATERIAL_CONTEXT = buildMaterialPromptContext([], '');
 
 const getFactContextForBook = async (bookId?: string) => {
   if (!bookId) return EMPTY_FACT_CONTEXT;
@@ -219,6 +249,17 @@ const getFactContextForBook = async (bookId?: string) => {
   } catch (error) {
     console.error('Failed to load fact context:', error);
     return EMPTY_FACT_CONTEXT;
+  }
+};
+
+const getMaterialContextForBook = async (bookId: string | undefined, query: string) => {
+  if (!bookId) return EMPTY_MATERIAL_CONTEXT;
+  try {
+    const materials = await db.materials.where('bookId').equals(bookId).toArray();
+    return buildMaterialPromptContext(materials, query, 5);
+  } catch (error) {
+    console.error('Failed to load material context:', error);
+    return EMPTY_MATERIAL_CONTEXT;
   }
 };
 
@@ -502,6 +543,7 @@ export const expandNode = async (
   const config = getConfigForTask('expansion');
   const controls = getPromptControls('expansion', config);
   const factContext = await getFactContextForBook(book.id);
+  const materialContext = await getMaterialContextForBook(book.id, `${parentNode.title}\n${parentNode.summary}`);
   const prompts = getTaskPrompts('expansion', {
     controls,
     bookTitle: book.title,
@@ -514,9 +556,12 @@ export const expandNode = async (
     factSummary: factContext.factSummary,
     factHardConstraints: factContext.factHardConstraints,
     factSoftContext: factContext.factSoftContext,
+    materialSummary: materialContext.materialSummary,
+    materialContext: materialContext.materialContext,
   }, options);
   const prompt = prompts.userPrompt;
-  const expansionSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`;
+  const styleBiblePrompt = buildStyleBiblePrompt(book);
+  const expansionSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -595,6 +640,7 @@ export const draftScene = async (
   const config = getConfigForTask('drafting');
   const controls = getPromptControls('drafting', config);
   const factContext = await getFactContextForBook(book.id);
+  const materialContext = await getMaterialContextForBook(book.id, `${node.title}\n${node.summary}\n${linearContext.slice(-500)}`);
 
   const hierarchyContext = ancestors.length > 0
     ? ancestors.map(a => `[${getNodeTypeName(a.type)}: ${a.title}]\n梗概: ${a.summary}`).join('\n\n')
@@ -616,9 +662,12 @@ export const draftScene = async (
     factSummary: factContext.factSummary,
     factHardConstraints: factContext.factHardConstraints,
     factSoftContext: factContext.factSoftContext,
+    materialSummary: materialContext.materialSummary,
+    materialContext: materialContext.materialContext,
   }, options);
   const prompt = prompts.userPrompt;
-  const draftingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`;
+  const styleBiblePrompt = buildStyleBiblePrompt(book);
+  const draftingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -681,6 +730,7 @@ export const polishText = async (
   const config = getConfigForTask('polishing');
   const controls = getPromptControls('polishing', config);
   const factContext = await getFactContextForBook(book.id);
+  const materialContext = await getMaterialContextForBook(book.id, `${selection}\n${context.slice(-500)}`);
   const prompts = getTaskPrompts('polishing', {
     controls,
     bookTitle: book.title,
@@ -691,9 +741,12 @@ export const polishText = async (
     factSummary: factContext.factSummary,
     factHardConstraints: factContext.factHardConstraints,
     factSoftContext: factContext.factSoftContext,
+    materialSummary: materialContext.materialSummary,
+    materialContext: materialContext.materialContext,
   }, options);
   const prompt = prompts.userPrompt;
-  const polishingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`;
+  const styleBiblePrompt = buildStyleBiblePrompt(book);
+  const polishingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -740,6 +793,96 @@ export const polishText = async (
   }
 };
 
+export const generateRewriteVariants = async (
+  selection: string,
+  preContext: string,
+  postContext: string,
+  book: Book,
+  signal?: AbortSignal,
+  options?: { promptProfileId?: string; variantCount?: number }
+): Promise<string[]> => {
+  ensureNotAborted(signal);
+  const config = getConfigForTask('polishing');
+  const controls = getPromptControls('polishing', config);
+  const factContext = await getFactContextForBook(book.id);
+  const materialContext = await getMaterialContextForBook(book.id, `${selection}\n${preContext.slice(-280)}\n${postContext.slice(0, 280)}`);
+  const styleBiblePrompt = buildStyleBiblePrompt(book);
+  const variantCount = Math.min(5, Math.max(2, options?.variantCount || 3));
+
+  const prompts = getTaskPrompts('polishing', {
+    controls,
+    bookTitle: book.title,
+    worldSettingSnippet: `${book.worldSetting.slice(0, 200)}...`,
+    contextSnippet: `${preContext.slice(-320)}\n<<待改写文本>>\n${postContext.slice(0, 320)}`,
+    selection,
+    polishRangeHint: '仅改写选中的文本片段，不改写上下文',
+    factSummary: factContext.factSummary,
+    factHardConstraints: factContext.factHardConstraints,
+    factSoftContext: factContext.factSoftContext,
+    materialSummary: materialContext.materialSummary,
+    materialContext: materialContext.materialContext,
+  }, options);
+
+  const systemPrompt = `${prompts.systemPrompt}
+
+[事实库硬约束]
+${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}
+
+[素材库参考]
+${materialContext.materialContext}
+
+[输出要求]
+你必须返回 JSON 格式：{ "variants": ["改写版本1", "改写版本2", "改写版本3"] }。
+禁止输出 Markdown 代码块。每个版本应语义一致，但风格、节奏、句式有差异。`;
+
+  const userPrompt = `${prompts.userPrompt}
+
+[额外任务]
+请给出 ${variantCount} 个可直接替换的改写版本，仅改写“选中文本”，不要复述上下文。`;
+
+  const parseVariants = (raw: string) => {
+    const clean = raw.replace(/```json\n|\n```/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(clean) as { variants?: string[] };
+    const variants = Array.isArray(parsed.variants)
+      ? parsed.variants.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    return variants.slice(0, variantCount);
+  };
+
+  if (config.provider === 'google') {
+    const ai = new GoogleGenAI({ apiKey: config.apiKey });
+    const response = await ai.models.generateContent({
+      model: config.modelName,
+      contents: userPrompt,
+      config: {
+        responseMimeType: 'application/json',
+        systemInstruction: systemPrompt,
+        temperature: Math.max(config.temperature, 0.65),
+      },
+    } as any);
+
+    const text = response.text || '';
+    recordUsage('polishing', config, `${systemPrompt}\n\n${userPrompt}`, text);
+    const variants = parseVariants(text);
+    if (variants.length === 0) {
+      throw new Error('改写结果为空，请重试。');
+    }
+    return variants;
+  }
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+  const text = await callOpenAI(config, messages, false, signal);
+  recordUsage('polishing', config, messages.map((msg) => msg.content).join('\n\n'), text);
+  const variants = parseVariants(text);
+  if (variants.length === 0) {
+    throw new Error('改写结果为空，请重试。');
+  }
+  return variants;
+};
+
 /**
  * CHAT: Conversational Assistant
  */
@@ -763,6 +906,7 @@ export const chat = async (
       return `用户: ${msg.content}`;
     })
     .join('\n\n');
+  const materialContext = await getMaterialContextForBook(currentBook?.id, `${context}\n${dialogue.slice(-600)}`);
   const prompts = getTaskPrompts('chat', {
     controls,
     chatContext: context,
@@ -770,11 +914,14 @@ export const chat = async (
     factSummary: factContext.factSummary,
     factHardConstraints: factContext.factHardConstraints,
     factSoftContext: factContext.factSoftContext,
+    materialSummary: materialContext.materialSummary,
+    materialContext: materialContext.materialContext,
   }, options);
+  const styleBiblePrompt = buildStyleBiblePrompt(currentBook);
 
   const systemMessage = {
     role: 'system' as const,
-    content: `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}`,
+    content: `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`,
   };
 
   if (config.provider === 'google') {
@@ -834,6 +981,8 @@ export const generateInspirationPack = async (
   const config = getConfigForTask('chat');
   const controls = getPromptControls('chat', config);
   const factContext = await getFactContextForBook(book.id);
+  const materialContext = await getMaterialContextForBook(book.id, `${node.title}\n${node.summary}\n${(node.content || '').slice(-800)}`);
+  const styleBiblePrompt = buildStyleBiblePrompt(book);
 
   const hierarchyContext = ancestors.length > 0
     ? ancestors.map((ancestor) => `[${getNodeTypeName(ancestor.type)}] ${ancestor.title} - ${ancestor.summary}`).join('\n')
@@ -858,9 +1007,15 @@ ${linearContext || '（开篇，无前文）'}
 [语义检索记忆]
 ${semanticContext || '（无高相关片段）'}
 
+[风格圣经]
+${styleBiblePrompt || '（未配置）'}
+
 [事实库]
 ${factContext.factHardConstraints}
 ${factContext.factSoftContext}
+
+[素材库]
+${materialContext.materialContext}
 
 [任务]
 你要输出一个“卡文急救灵感包”，帮助作者立刻继续写。必须是简体中文，且仅返回 JSON：
@@ -921,7 +1076,7 @@ ${factContext.factSoftContext}
       config: {
         responseMimeType: 'application/json',
         responseSchema: schema,
-        systemInstruction: '你是资深小说策划编辑，擅长在不破坏设定的前提下快速解卡。请仅输出 JSON。',
+        systemInstruction: `你是资深小说策划编辑，擅长在不破坏设定的前提下快速解卡。请仅输出 JSON。${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`,
         temperature: Math.max(0.7, config.temperature),
       },
     } as any);
@@ -934,7 +1089,7 @@ ${factContext.factSoftContext}
   const messages = [
     {
       role: 'system',
-      content: '你是资深小说策划编辑，擅长在不破坏设定的前提下快速解卡。请仅输出 JSON。',
+      content: `你是资深小说策划编辑，擅长在不破坏设定的前提下快速解卡。请仅输出 JSON。${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`,
     },
     {
       role: 'user',

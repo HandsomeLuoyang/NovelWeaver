@@ -18,7 +18,15 @@ describe('evaluatePublishWorkflow', () => {
         status: 'drafted',
         content: longDraft('scene one'),
         order: 0,
-        meta: { pov: 'A', location: 'City', participants: ['A'] },
+        meta: {
+          pov: 'A',
+          location: 'City',
+          participants: ['A'],
+          goal: '拿到黑匣子',
+          obstacle: '守卫封锁港口',
+          turn: '同伴暴露了潜入路线',
+          outcome: '主角改走地下水道',
+        },
       }),
       createNode({
         id: 's2',
@@ -29,7 +37,16 @@ describe('evaluatePublishWorkflow', () => {
         status: 'drafted',
         content: longDraft('scene two'),
         order: 1,
-        meta: { pov: 'B', location: 'Port', conflictType: '对抗', participants: ['B'] },
+        meta: {
+          pov: 'B',
+          location: 'Port',
+          conflictType: '对抗',
+          participants: ['B'],
+          goal: '把黑匣子送到安全屋',
+          obstacle: '追兵封锁桥面',
+          turn: '安全屋联系人突然失联',
+          outcome: '决定伪装成补给队离港',
+        },
       }),
     ];
 
@@ -143,5 +160,52 @@ describe('evaluatePublishWorkflow', () => {
 
     expect(reviewStage?.passed).toBe(false);
     expect(reviewStage?.blockers.some((blocker) => blocker.message.includes('锁定事实'))).toBe(true);
+  });
+
+  it('blocks release when unresolved foreshadows exist', () => {
+    const book = createBook();
+    const nodes = [
+      createNode({ id: 'v1', type: 'volume', title: 'V1', order: 0 }),
+      createNode({ id: 'a1', parentId: 'v1', type: 'arc', title: 'A1', order: 0 }),
+      createNode({ id: 'c1', parentId: 'a1', type: 'chapter', title: 'C1', order: 0 }),
+      createNode({
+        id: 's1',
+        parentId: 'c1',
+        type: 'scene',
+        title: 'S1',
+        summary: 'Day 1',
+        status: 'drafted',
+        content: longDraft('scene one'),
+        order: 0,
+        meta: {
+          pov: 'A',
+          location: 'City',
+          participants: ['A'],
+          goal: '拿到黑匣子',
+          obstacle: '守卫封锁港口',
+          turn: '同伴暴露了潜入路线',
+          outcome: '主角改走地下水道',
+        },
+      }),
+    ];
+
+    const report = evaluatePublishWorkflow(book, nodes, [], [
+      {
+        id: 'fz-1',
+        bookId: book.id,
+        title: '神秘怀表',
+        notes: '',
+        tags: [],
+        status: 'seeded',
+        setupNodeId: 's1',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ]);
+    const releaseStage = report.stages.find((stage) => stage.id === 'release');
+
+    expect(report.unresolvedForeshadows).toBe(1);
+    expect(releaseStage?.passed).toBe(false);
+    expect(releaseStage?.blockers.some((blocker) => blocker.id === 'foreshadow-unresolved')).toBe(true);
   });
 });

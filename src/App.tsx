@@ -77,6 +77,12 @@ const App: React.FC = () => {
     const factCandidatesCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
     const factCandidatesUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
     const factCandidatesDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const foreshadowsCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const foreshadowsUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const foreshadowsDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const materialsCreatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const materialsUpdatingHook = (..._args: any[]) => { scheduleDiskSync(); };
+    const materialsDeletingHook = (..._args: any[]) => { scheduleDiskSync(); };
 
     // Keep disk as source-of-truth by hydrating from disk snapshot first.
     const initPersistence = async () => {
@@ -111,6 +117,12 @@ const App: React.FC = () => {
     db.factCandidates.hook('creating', factCandidatesCreatingHook);
     db.factCandidates.hook('updating', factCandidatesUpdatingHook);
     db.factCandidates.hook('deleting', factCandidatesDeletingHook);
+    db.foreshadows.hook('creating', foreshadowsCreatingHook);
+    db.foreshadows.hook('updating', foreshadowsUpdatingHook);
+    db.foreshadows.hook('deleting', foreshadowsDeletingHook);
+    db.materials.hook('creating', materialsCreatingHook);
+    db.materials.hook('updating', materialsUpdatingHook);
+    db.materials.hook('deleting', materialsDeletingHook);
 
     // Auto-save every 30 seconds
     const interval = window.setInterval(() => {
@@ -157,6 +169,12 @@ const App: React.FC = () => {
       db.factCandidates.hook('creating').unsubscribe(factCandidatesCreatingHook);
       db.factCandidates.hook('updating').unsubscribe(factCandidatesUpdatingHook);
       db.factCandidates.hook('deleting').unsubscribe(factCandidatesDeletingHook);
+      db.foreshadows.hook('creating').unsubscribe(foreshadowsCreatingHook);
+      db.foreshadows.hook('updating').unsubscribe(foreshadowsUpdatingHook);
+      db.foreshadows.hook('deleting').unsubscribe(foreshadowsDeletingHook);
+      db.materials.hook('creating').unsubscribe(materialsCreatingHook);
+      db.materials.hook('updating').unsubscribe(materialsUpdatingHook);
+      db.materials.hook('deleting').unsubscribe(materialsDeletingHook);
       window.clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('pagehide', handlePageHide);

@@ -18,6 +18,12 @@ describe('runConsistencyCheck', () => {
         status: 'drafted',
         content: longDraft('coherent'),
         order: 0,
+        meta: {
+          goal: '找到失踪线索',
+          obstacle: '线人临时失联',
+          turn: '发现线人被假情报引开',
+          outcome: '主角锁定新的调查方向',
+        },
       }),
     ];
 

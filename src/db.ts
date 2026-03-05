@@ -9,7 +9,9 @@ import {
   DeletedNodeEntry,
   RecoverySnapshot,
   FactEntry,
-  FactCandidate
+  FactCandidate,
+  ForeshadowEntry,
+  MaterialEntry
 } from './types';
 
 class NovelWeaverDatabase extends Dexie {
@@ -22,6 +24,8 @@ class NovelWeaverDatabase extends Dexie {
   backups!: Table<RecoverySnapshot>;
   facts!: Table<FactEntry>;
   factCandidates!: Table<FactCandidate>;
+  foreshadows!: Table<ForeshadowEntry>;
+  materials!: Table<MaterialEntry>;
 
   constructor() {
     super('NovelWeaverDB');
@@ -58,6 +62,31 @@ class NovelWeaverDatabase extends Dexie {
       backups: 'id, createdAt, source',
       facts: 'id, bookId, locked, status, category, updatedAt, [bookId+status], [bookId+locked]',
       factCandidates: 'id, bookId, createdAt, category'
+    });
+    this.version(10).stores({
+      books: 'id, title, createdAt',
+      nodes: 'id, bookId, parentId, type, order, [bookId+parentId]',
+      history: '++id, nodeId, timestamp, action',
+      snapshots: 'id, parentId, bookId, createdAt',
+      deletedBooks: 'id, deletedAt, title',
+      deletedNodes: 'id, bookId, rootNodeId, deletedAt',
+      backups: 'id, createdAt, source',
+      facts: 'id, bookId, locked, status, category, updatedAt, [bookId+status], [bookId+locked]',
+      factCandidates: 'id, bookId, createdAt, category',
+      foreshadows: 'id, bookId, status, updatedAt, [bookId+status]'
+    });
+    this.version(11).stores({
+      books: 'id, title, createdAt',
+      nodes: 'id, bookId, parentId, type, order, [bookId+parentId]',
+      history: '++id, nodeId, timestamp, action',
+      snapshots: 'id, parentId, bookId, createdAt',
+      deletedBooks: 'id, deletedAt, title',
+      deletedNodes: 'id, bookId, rootNodeId, deletedAt',
+      backups: 'id, createdAt, source',
+      facts: 'id, bookId, locked, status, category, updatedAt, [bookId+status], [bookId+locked]',
+      factCandidates: 'id, bookId, createdAt, category',
+      foreshadows: 'id, bookId, status, updatedAt, [bookId+status]',
+      materials: 'id, bookId, type, updatedAt, [bookId+type]'
     });
   }
 }
@@ -360,6 +389,8 @@ export const moveBookToRecycleBin = async (bookId: string) => {
   const snapshots = await db.snapshots.where('bookId').equals(bookId).toArray();
   const facts = await db.facts.where('bookId').equals(bookId).toArray();
   const factCandidates = await db.factCandidates.where('bookId').equals(bookId).toArray();
+  const foreshadows = await db.foreshadows.where('bookId').equals(bookId).toArray();
+  const materials = await db.materials.where('bookId').equals(bookId).toArray();
 
   const recycleEntry: DeletedBookEntry = {
     id: crypto.randomUUID(),
@@ -371,11 +402,13 @@ export const moveBookToRecycleBin = async (bookId: string) => {
       history,
       snapshots,
       facts,
-      factCandidates
+      factCandidates,
+      foreshadows,
+      materials
     }
   };
 
-  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.facts, db.factCandidates], async () => {
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.facts, db.factCandidates, db.foreshadows, db.materials], async () => {
     await db.deletedBooks.add(recycleEntry);
     if (nodeIds.length > 0) {
       await db.history.where('nodeId').anyOf(nodeIds).delete();
@@ -383,6 +416,8 @@ export const moveBookToRecycleBin = async (bookId: string) => {
     await db.snapshots.where('bookId').equals(bookId).delete();
     await db.facts.where('bookId').equals(bookId).delete();
     await db.factCandidates.where('bookId').equals(bookId).delete();
+    await db.foreshadows.where('bookId').equals(bookId).delete();
+    await db.materials.where('bookId').equals(bookId).delete();
     await db.nodes.where('bookId').equals(bookId).delete();
     await db.books.delete(bookId);
   });
@@ -453,7 +488,26 @@ export const restoreBookFromRecycleBin = async (entryId: string) => {
     createdAt: Date.now(),
   }));
 
-  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.facts, db.factCandidates], async () => {
+  const sourceForeshadows = recycleEntry.data.foreshadows || [];
+  const restoredForeshadows = sourceForeshadows.map((entry) => ({
+    ...entry,
+    id: crypto.randomUUID(),
+    bookId: restoredBookId,
+    setupNodeId: entry.setupNodeId ? (nodeIdMap.get(entry.setupNodeId) || undefined) : undefined,
+    payoffNodeId: entry.payoffNodeId ? (nodeIdMap.get(entry.payoffNodeId) || undefined) : undefined,
+    updatedAt: Date.now(),
+  }));
+
+  const sourceMaterials = recycleEntry.data.materials || [];
+  const restoredMaterials = sourceMaterials.map((material) => ({
+    ...material,
+    id: crypto.randomUUID(),
+    bookId: restoredBookId,
+    linkedNodeId: material.linkedNodeId ? (nodeIdMap.get(material.linkedNodeId) || undefined) : undefined,
+    updatedAt: Date.now(),
+  }));
+
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.facts, db.factCandidates, db.foreshadows, db.materials], async () => {
     await db.books.put(restoredBook);
     if (restoredNodes.length > 0) {
       await db.nodes.bulkPut(restoredNodes);
@@ -469,6 +523,12 @@ export const restoreBookFromRecycleBin = async (entryId: string) => {
     }
     if (restoredCandidates.length > 0) {
       await db.factCandidates.bulkPut(restoredCandidates);
+    }
+    if (restoredForeshadows.length > 0) {
+      await db.foreshadows.bulkPut(restoredForeshadows);
+    }
+    if (restoredMaterials.length > 0) {
+      await db.materials.bulkPut(restoredMaterials);
     }
     await db.deletedBooks.delete(entryId);
   });

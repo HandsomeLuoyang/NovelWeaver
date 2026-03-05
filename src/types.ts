@@ -17,9 +17,17 @@ export interface Character {
   secret: string;
 }
 
+export interface StyleBible {
+  rules: string;
+  bannedTerms: string[];
+  sentencePatterns: string[];
+}
+
 export type FactCategory = 'world' | 'character' | 'timeline' | 'rule' | 'location' | 'item' | 'event' | 'custom';
 export type FactReliability = 'confirmed' | 'tentative';
 export type FactStatus = 'active' | 'archived';
+export type ForeshadowStatus = 'seeded' | 'progressed' | 'payoff' | 'dropped';
+export type MaterialType = 'snippet' | 'idea' | 'reference' | 'note';
 
 export interface FactEntry {
   id: string;
@@ -48,6 +56,32 @@ export interface FactCandidate {
   createdAt: number;
 }
 
+export interface ForeshadowEntry {
+  id: string;
+  bookId: string;
+  title: string;
+  notes?: string;
+  tags: string[];
+  setupNodeId?: string;
+  payoffNodeId?: string;
+  status: ForeshadowStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MaterialEntry {
+  id: string;
+  bookId: string;
+  type: MaterialType;
+  title: string;
+  content: string;
+  tags: string[];
+  source?: string;
+  linkedNodeId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface Book {
   id: string;
   title: string;
@@ -58,6 +92,8 @@ export interface Book {
   createdAt: number;
   writingStyle?: WritingStyle; // 写作风格
   styleReferences?: string[];  // 参考作品
+  styleBible?: StyleBible;
+  characterArcNotes?: Record<string, string>;
 }
 
 export interface StoryNode {
@@ -77,6 +113,10 @@ export interface StoryNode {
     participants?: string[];
     conflictType?: string;
     tags?: string[];
+    goal?: string;
+    obstacle?: string;
+    turn?: string;
+    outcome?: string;
   };
 }
 
@@ -174,6 +214,8 @@ export interface ExportData {
   nodes: StoryNode[];
   history?: HistoryEntry[];
   facts?: FactEntry[];
+  foreshadows?: ForeshadowEntry[];
+  materials?: MaterialEntry[];
 }
 
 export type HistoryAction = 'manual' | 'ai-draft' | 'ai-polish' | 'restore';
@@ -209,6 +251,8 @@ export interface DeletedBookEntry {
     snapshots: StructureSnapshot[];
     facts?: FactEntry[];
     factCandidates?: FactCandidate[];
+    foreshadows?: ForeshadowEntry[];
+    materials?: MaterialEntry[];
   };
 }
 

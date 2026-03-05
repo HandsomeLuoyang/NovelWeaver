@@ -29,13 +29,20 @@ export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOp
     },
     [book.id, isOpen]
   );
+  const foreshadows = useLiveQuery(
+    async () => {
+      if (!isOpen) return [];
+      return db.foreshadows.where('bookId').equals(book.id).toArray();
+    },
+    [book.id, isOpen]
+  );
   const report: PublishWorkflowReport | null = useMemo(() => {
-    if (!nodes || !facts) return null;
-    return evaluatePublishWorkflow(book, nodes, facts);
-  }, [book, nodes, facts]);
+    if (!nodes || !facts || !foreshadows) return null;
+    return evaluatePublishWorkflow(book, nodes, facts, foreshadows);
+  }, [book, nodes, facts, foreshadows]);
 
   if (!isOpen) return null;
-  const loading = !nodes || !facts;
+  const loading = !nodes || !facts || !foreshadows;
 
   const jumpToNode = (nodeId?: string) => {
     if (!nodeId || !nodes) return;
@@ -83,7 +90,7 @@ export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOp
 
           {!loading && report && (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <div className="rounded-lg border border-border bg-secondary/20 p-3">
                   <div className="text-[11px] text-muted-foreground">质量评分</div>
                   <div className="text-2xl font-bold text-primary mt-1">{report.qualityScore}</div>
@@ -99,6 +106,12 @@ export const PublishWorkflowModal: React.FC<PublishWorkflowModalProps> = ({ isOp
                 <div className="rounded-lg border border-border bg-secondary/20 p-3">
                   <div className="text-[11px] text-muted-foreground">元数据覆盖率</div>
                   <div className="text-lg font-semibold text-foreground mt-1">{(report.metadataCoverage * 100).toFixed(1)}%</div>
+                </div>
+                <div className="rounded-lg border border-border bg-secondary/20 p-3">
+                  <div className="text-[11px] text-muted-foreground">未回收伏笔</div>
+                  <div className={`text-lg font-semibold mt-1 ${report.unresolvedForeshadows > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                    {report.unresolvedForeshadows}
+                  </div>
                 </div>
               </div>
 

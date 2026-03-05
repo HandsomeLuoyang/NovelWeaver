@@ -1,4 +1,4 @@
-import { Book, FactEntry, StoryNode } from '../types';
+import { Book, FactEntry, ForeshadowEntry, StoryNode } from '../types';
 import { runConsistencyCheck } from './consistencyService';
 
 export interface PublishBlocker {
@@ -21,6 +21,7 @@ export interface PublishWorkflowReport {
   draftCoverage: number;
   outlineCompleteness: number;
   metadataCoverage: number;
+  unresolvedForeshadows: number;
   findingsSummary: {
     high: number;
     medium: number;
@@ -31,7 +32,12 @@ export interface PublishWorkflowReport {
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-export const evaluatePublishWorkflow = (book: Book, nodes: StoryNode[], facts: FactEntry[] = []): PublishWorkflowReport => {
+export const evaluatePublishWorkflow = (
+  book: Book,
+  nodes: StoryNode[],
+  facts: FactEntry[] = [],
+  foreshadows: ForeshadowEntry[] = []
+): PublishWorkflowReport => {
   const findings = runConsistencyCheck(book, nodes, facts);
   const high = findings.filter((finding) => finding.severity === 'high').length;
   const medium = findings.filter((finding) => finding.severity === 'medium').length;
@@ -61,6 +67,8 @@ export const evaluatePublishWorkflow = (book: Book, nodes: StoryNode[], facts: F
   const penalty = high * 15 + medium * 6 + low * 2;
   const scoreBase = outlineCompleteness * 25 + draftCoverage * 45 + metadataCoverage * 15 + (1 - clamp(penalty / 100, 0, 1)) * 15;
   const qualityScore = clamp(Math.round(scoreBase), 0, 100);
+  const unresolvedForeshadows = foreshadows.filter((entry) => entry.status === 'seeded' || entry.status === 'progressed').length;
+  const firstUnresolvedForeshadow = foreshadows.find((entry) => entry.status === 'seeded' || entry.status === 'progressed');
 
   const toBlockers = (severity: 'high' | 'medium' | 'low', limit: number): PublishBlocker[] => {
     return findings
@@ -136,8 +144,8 @@ export const evaluatePublishWorkflow = (book: Book, nodes: StoryNode[], facts: F
       id: 'release',
       title: '发布门禁',
       description: '质量评分达到 85 分以上且全书可读',
-      passed: qualityScore >= 85 && draftCoverage >= 0.95 && high === 0,
-      blockers: qualityScore >= 85 && draftCoverage >= 0.95 && high === 0
+      passed: qualityScore >= 85 && draftCoverage >= 0.95 && high === 0 && unresolvedForeshadows === 0,
+      blockers: qualityScore >= 85 && draftCoverage >= 0.95 && high === 0 && unresolvedForeshadows === 0
         ? []
         : [
             {
@@ -145,6 +153,14 @@ export const evaluatePublishWorkflow = (book: Book, nodes: StoryNode[], facts: F
               message: '未达到发布阈值（评分>=85、草稿覆盖>=95%、高优先级问题为0）。',
               suggestion: '先补齐草稿覆盖率，再清空高优先级一致性问题。',
             },
+            ...(unresolvedForeshadows > 0
+              ? [{
+                  id: 'foreshadow-unresolved',
+                  message: `仍有 ${unresolvedForeshadows} 条伏笔未回收。`,
+                  nodeId: firstUnresolvedForeshadow?.setupNodeId || firstUnresolvedForeshadow?.payoffNodeId,
+                  suggestion: '请在伏笔管理器中推进到“已回收”或标记“弃坑”。',
+                }]
+              : []),
             ...toBlockers('high', 3),
             ...toBlockers('medium', 2),
           ],
@@ -156,6 +172,7 @@ export const evaluatePublishWorkflow = (book: Book, nodes: StoryNode[], facts: F
     draftCoverage,
     outlineCompleteness,
     metadataCoverage,
+    unresolvedForeshadows,
     findingsSummary: { high, medium, low },
     stages,
   };

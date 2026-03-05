@@ -176,13 +176,17 @@ export const Library: React.FC = () => {
                 const nodeIds = nodes.map(n => n.id);
                 const history = await db.history.where('nodeId').anyOf(nodeIds).toArray();
                 const facts = await db.facts.where('bookId').equals(book.id).toArray();
+                const foreshadows = await db.foreshadows.where('bookId').equals(book.id).toArray();
+                const materials = await db.materials.where('bookId').equals(book.id).toArray();
 
                 const exportData: ExportData = {
-                    version: 2,
+                    version: 4,
                     book: book,
                     nodes: nodes,
                     history: history,
                     facts,
+                    foreshadows,
+                    materials,
                 };
 
                 content = JSON.stringify(exportData, null, 2);
@@ -246,6 +250,29 @@ export const Library: React.FC = () => {
                 }));
                 if (importedFacts.length > 0) {
                     await db.facts.bulkAdd(importedFacts);
+                }
+                const importedForeshadows = (data.foreshadows || []).map((entry) => ({
+                    ...entry,
+                    id: uuidv4(),
+                    bookId: newBookId,
+                    setupNodeId: entry.setupNodeId ? (idMap.get(entry.setupNodeId) || undefined) : undefined,
+                    payoffNodeId: entry.payoffNodeId ? (idMap.get(entry.payoffNodeId) || undefined) : undefined,
+                    createdAt: entry.createdAt || Date.now(),
+                    updatedAt: Date.now(),
+                }));
+                if (importedForeshadows.length > 0) {
+                    await db.foreshadows.bulkAdd(importedForeshadows);
+                }
+                const importedMaterials = (data.materials || []).map((entry) => ({
+                    ...entry,
+                    id: uuidv4(),
+                    bookId: newBookId,
+                    linkedNodeId: entry.linkedNodeId ? (idMap.get(entry.linkedNodeId) || undefined) : undefined,
+                    createdAt: entry.createdAt || Date.now(),
+                    updatedAt: Date.now(),
+                }));
+                if (importedMaterials.length > 0) {
+                    await db.materials.bulkAdd(importedMaterials);
                 }
 
                 if (data.history && data.history.length > 0) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Book, Character, FactCandidate, FactEntry, StoryNode } from '../types';
+import { Book, Character, FactCandidate, FactEntry, StoryNode, WritingStyle } from '../types';
 import { db } from '../db';
 import { Icons } from './Icons';
 import { CharacterList } from './WorldBible/CharacterList';
@@ -19,6 +19,11 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
   const [premise, setPremise] = useState(book.premise);
   const [worldSetting, setWorldSetting] = useState(book.worldSetting);
   const [characters, setCharacters] = useState<Character[]>(book.characters || []);
+  const [writingStyle, setWritingStyle] = useState<WritingStyle>(book.writingStyle || 'balanced');
+  const [styleReferencesText, setStyleReferencesText] = useState((book.styleReferences || []).join('\n'));
+  const [styleRules, setStyleRules] = useState(book.styleBible?.rules || '');
+  const [styleBannedTermsText, setStyleBannedTermsText] = useState((book.styleBible?.bannedTerms || []).join('，'));
+  const [styleSentencePatternsText, setStyleSentencePatternsText] = useState((book.styleBible?.sentencePatterns || []).join('\n'));
   const [facts, setFacts] = useState<FactEntry[]>([]);
   const [factCandidates, setFactCandidates] = useState<FactCandidate[]>([]);
   const [graphNodes, setGraphNodes] = useState<StoryNode[]>([]);
@@ -30,6 +35,11 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
     setPremise(book.premise);
     setWorldSetting(book.worldSetting);
     setCharacters(book.characters || []);
+    setWritingStyle(book.writingStyle || 'balanced');
+    setStyleReferencesText((book.styleReferences || []).join('\n'));
+    setStyleRules(book.styleBible?.rules || '');
+    setStyleBannedTermsText((book.styleBible?.bannedTerms || []).join('，'));
+    setStyleSentencePatternsText((book.styleBible?.sentencePatterns || []).join('\n'));
     setActiveTab('basic');
     void (async () => {
       const [factList, candidateList] = await Promise.all([
@@ -77,7 +87,26 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
         title: normalizedTitle,
         premise: premise.trim(),
         worldSetting: worldSetting.trim(),
-        characters: sanitizedCharacters
+        characters: sanitizedCharacters,
+        writingStyle,
+        styleReferences: styleReferencesText
+          .split('\n')
+          .map((item) => item.trim())
+          .filter(Boolean)
+          .slice(0, 20),
+        styleBible: {
+          rules: styleRules.trim(),
+          bannedTerms: styleBannedTermsText
+            .split(/[，,]/)
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .slice(0, 30),
+          sentencePatterns: styleSentencePatternsText
+            .split('\n')
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .slice(0, 20),
+        }
       };
 
       const now = Date.now();
@@ -236,6 +265,65 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
                   className="w-full h-64 bg-input border border-border rounded-lg p-3 text-foreground/90 focus:outline-none focus:ring-1 focus:ring-primary leading-relaxed resize-none placeholder:text-muted-foreground/50"
                   placeholder="描述故事的核心创意、主要冲突和预期结局..."
                 />
+              </div>
+              <div className="rounded-lg border border-border bg-secondary/20 p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-foreground">风格圣经</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="text-xs text-muted-foreground flex flex-col gap-1">
+                    写作风格
+                    <select
+                      value={writingStyle}
+                      onChange={(event) => setWritingStyle(event.target.value as WritingStyle)}
+                      className="bg-input border border-border rounded px-2 py-2 text-xs text-foreground"
+                    >
+                      <option value="balanced">平衡型</option>
+                      <option value="realistic">现实主义</option>
+                      <option value="poetic">诗意派</option>
+                      <option value="noir">黑色幽默</option>
+                      <option value="suspense">悬疑</option>
+                      <option value="minimalist">极简主义</option>
+                      <option value="maximalist">巴洛克式</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-muted-foreground flex flex-col gap-1">
+                    参考作品（每行一条）
+                    <textarea
+                      value={styleReferencesText}
+                      onChange={(event) => setStyleReferencesText(event.target.value)}
+                      className="min-h-[84px] bg-input border border-border rounded px-2 py-2 text-xs text-foreground leading-6"
+                      placeholder="例如：冰与火之歌&#10;边城"
+                    />
+                  </label>
+                </div>
+                <label className="text-xs text-muted-foreground flex flex-col gap-1">
+                  风格规则
+                  <textarea
+                    value={styleRules}
+                    onChange={(event) => setStyleRules(event.target.value)}
+                    className="min-h-[100px] bg-input border border-border rounded px-2 py-2 text-xs text-foreground leading-6"
+                    placeholder="例如：叙述克制，避免上帝视角跳切；对白简短有潜台词。"
+                  />
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="text-xs text-muted-foreground flex flex-col gap-1">
+                    禁用词（逗号分隔）
+                    <input
+                      value={styleBannedTermsText}
+                      onChange={(event) => setStyleBannedTermsText(event.target.value)}
+                      className="bg-input border border-border rounded px-2 py-2 text-xs text-foreground"
+                      placeholder="无敌、碾压、绝美"
+                    />
+                  </label>
+                  <label className="text-xs text-muted-foreground flex flex-col gap-1">
+                    句式偏好（每行一条）
+                    <textarea
+                      value={styleSentencePatternsText}
+                      onChange={(event) => setStyleSentencePatternsText(event.target.value)}
+                      className="min-h-[84px] bg-input border border-border rounded px-2 py-2 text-xs text-foreground leading-6"
+                      placeholder="短句推进&#10;动作-感受-判断"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
           )}
