@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   saveHistory: vi.fn(),
   getLinearContext: vi.fn(),
   getAncestors: vi.fn(),
+  getSceneCharacterStates: vi.fn(),
+  saveSceneCharacterStates: vi.fn(),
+  getSemanticContext: vi.fn(),
   useToast: vi.fn(),
   aiDraft: vi.fn(),
   aiPolish: vi.fn(),
@@ -27,6 +30,9 @@ vi.mock('../../src/db', () => ({
   },
   getLinearContext: mocks.getLinearContext,
   getAncestors: mocks.getAncestors,
+  getSceneCharacterStates: mocks.getSceneCharacterStates,
+  saveSceneCharacterStates: mocks.saveSceneCharacterStates,
+  getSemanticContext: mocks.getSemanticContext,
   saveHistory: mocks.saveHistory,
   getHistory: mocks.getHistory,
 }));
@@ -96,6 +102,9 @@ describe('Editor toolbar more menu', () => {
     mocks.saveHistory.mockReset();
     mocks.getLinearContext.mockReset();
     mocks.getAncestors.mockReset();
+    mocks.getSceneCharacterStates.mockReset();
+    mocks.saveSceneCharacterStates.mockReset();
+    mocks.getSemanticContext.mockReset();
     mocks.stopGeneration.mockReset();
     mocks.aiDraft.mockReset();
     mocks.aiPolish.mockReset();
@@ -103,6 +112,8 @@ describe('Editor toolbar more menu', () => {
 
     mocks.nodeGet.mockResolvedValue(sceneNode);
     mocks.getHistory.mockResolvedValue([]);
+    mocks.getSceneCharacterStates.mockResolvedValue([]);
+    mocks.getSemanticContext.mockResolvedValue([]);
     mocks.useToast.mockReturnValue({
       success: vi.fn(),
       error: vi.fn(),

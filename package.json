@@ -16,6 +16,8 @@
     "dexie": "^4.3.0",
     "dexie-react-hooks": "^4.2.0",
     "diff": "^8.0.3",
+    "docx": "^9.6.0",
+    "fflate": "^0.8.2",
     "framer-motion": "^12.29.2",
     "lucide-react": "^0.563.0",
     "react": "^19.2.4",
