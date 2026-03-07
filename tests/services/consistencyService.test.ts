@@ -171,4 +171,76 @@ describe('runConsistencyCheck', () => {
 
     expect(findings.some((finding) => finding.id.startsWith('locked-fact-conflict-'))).toBe(true);
   });
+
+  it('adds categories and style findings based on style bible and ledger', () => {
+    const book = createBook({
+      characters: [
+        { name: 'Alice', role: 'hero', description: '', secret: '' },
+      ],
+      styleBible: {
+        rules: '整体文风要求克制、简洁，少用连续感叹号。',
+        bannedTerms: ['绝对无敌'],
+        sentencePatterns: ['潮汐像刀一样贴着港面滑行'],
+      },
+    });
+    const nodes = [
+      createNode({ id: 'v1', type: 'volume', title: 'V1', order: 0 }),
+      createNode({ id: 'a1', parentId: 'v1', type: 'arc', title: 'A1', order: 0 }),
+      createNode({ id: 'c1', parentId: 'a1', type: 'chapter', title: 'C1', order: 0 }),
+      createNode({
+        id: 's1',
+        parentId: 'c1',
+        type: 'scene',
+        title: 'S1',
+        summary: '第1天',
+        status: 'drafted',
+        content: `${'绝对无敌！！！'.repeat(8)} Alice 苏醒。`,
+        order: 0,
+        meta: { participants: ['Alice'], location: '码头' },
+      }),
+      createNode({
+        id: 's2',
+        parentId: 'c1',
+        type: 'scene',
+        title: 'S2',
+        summary: '第1天',
+        status: 'drafted',
+        content: longDraft('Alice 调查钟楼'),
+        order: 1,
+        meta: { participants: ['Alice'], location: '钟楼' },
+      }),
+    ];
+
+    const findings = runConsistencyCheck(book, nodes, [], [
+      {
+        id: 'cs1',
+        bookId: book.id,
+        nodeId: 's1',
+        characterName: 'Alice',
+        location: '码头',
+        physicalState: '死亡',
+        knowledgeState: '',
+        inventory: '',
+        note: '',
+        updatedAt: 1,
+      },
+      {
+        id: 'cs2',
+        bookId: book.id,
+        nodeId: 's2',
+        characterName: 'Alice',
+        location: '钟楼',
+        physicalState: '苏醒',
+        knowledgeState: '',
+        inventory: '',
+        note: '',
+        updatedAt: 2,
+      },
+    ]);
+
+    expect(findings.some((finding) => finding.category === 'style' && finding.id.startsWith('style-banned-term-'))).toBe(true);
+    expect(findings.some((finding) => finding.category === 'style' && finding.id.startsWith('style-over-emphasis-'))).toBe(true);
+    expect(findings.some((finding) => finding.category === 'timeline' && finding.id.startsWith('char-location-conflict-'))).toBe(true);
+    expect(findings.some((finding) => finding.category === 'character' && finding.id.startsWith('char-state-resurrection-'))).toBe(true);
+  });
 });

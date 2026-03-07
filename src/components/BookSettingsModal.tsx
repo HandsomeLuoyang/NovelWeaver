@@ -4,7 +4,7 @@ import { db } from '../db';
 import { Icons } from './Icons';
 import { CharacterList } from './WorldBible/CharacterList';
 import { RelationGraph } from './WorldBible/RelationGraph';
-import { exportAsMarkdown, exportAsText, exportAsHTML, downloadFile } from '../services/exportService';
+import { exportAsMarkdown, exportAsText, exportAsHTML, exportAsDocx, exportAsEpub, downloadFile } from '../services/exportService';
 import { FactLibraryPanel } from './FactLibraryPanel';
 
 interface Props {
@@ -150,26 +150,40 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
     }
   };
 
-  const handleExport = async (format: 'md' | 'txt' | 'html') => {
-    let content = '';
+  const handleExport = async (format: 'md' | 'txt' | 'html' | 'docx' | 'epub') => {
+    let content: string | Blob | Uint8Array = '';
     let ext = '';
+    let mimeType = 'text/plain;charset=utf-8';
 
     switch (format) {
       case 'md':
         content = await exportAsMarkdown(book);
         ext = 'md';
+        mimeType = 'text/markdown;charset=utf-8';
         break;
       case 'txt':
         content = await exportAsText(book);
         ext = 'txt';
+        mimeType = 'text/plain;charset=utf-8';
         break;
       case 'html':
         content = await exportAsHTML(book);
         ext = 'html';
+        mimeType = 'text/html;charset=utf-8';
+        break;
+      case 'docx':
+        content = await exportAsDocx(book);
+        ext = 'docx';
+        mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        break;
+      case 'epub':
+        content = await exportAsEpub(book);
+        ext = 'epub';
+        mimeType = 'application/epub+zip';
         break;
     }
 
-    downloadFile(content, `${book.title}.${ext}`);
+    downloadFile(content, `${book.title}.${ext}`, mimeType);
   };
 
   return (
@@ -375,7 +389,7 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
                     <p className="text-muted-foreground mt-2">选择一种格式下载整本书籍内容，包含世界观和角色设定。</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <button
                         onClick={() => handleExport('md')}
                         className="flex flex-col items-center justify-center p-6 bg-secondary/30 hover:bg-secondary border border-border rounded-xl transition-all hover:scale-105"
@@ -401,6 +415,24 @@ export const BookSettingsModal: React.FC<Props> = ({ book, isOpen, onClose, onUp
                         <Icons.FileText className="w-8 h-8 text-zinc-500 mb-3" />
                         <span className="font-bold">纯文本 (.txt)</span>
                         <span className="text-xs text-muted-foreground mt-1">通用格式，无样式</span>
+                    </button>
+
+                    <button
+                        onClick={() => handleExport('docx')}
+                        className="flex flex-col items-center justify-center p-6 bg-secondary/30 hover:bg-secondary border border-border rounded-xl transition-all hover:scale-105"
+                    >
+                        <Icons.File className="w-8 h-8 text-sky-500 mb-3" />
+                        <span className="font-bold">DOCX</span>
+                        <span className="text-xs text-muted-foreground mt-1">适合 Word / 编辑审阅</span>
+                    </button>
+
+                    <button
+                        onClick={() => handleExport('epub')}
+                        className="flex flex-col items-center justify-center p-6 bg-secondary/30 hover:bg-secondary border border-border rounded-xl transition-all hover:scale-105"
+                    >
+                        <Icons.BookOpen className="w-8 h-8 text-emerald-500 mb-3" />
+                        <span className="font-bold">EPUB</span>
+                        <span className="text-xs text-muted-foreground mt-1">适合电子书阅读器</span>
                     </button>
                 </div>
              </div>

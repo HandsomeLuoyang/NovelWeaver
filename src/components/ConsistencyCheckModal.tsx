@@ -4,6 +4,7 @@ import { db } from '../db';
 import { runConsistencyCheck, ConsistencyFinding } from '../services/consistencyService';
 import { useStore } from '../store';
 import { Icons } from './Icons';
+import { ConsistencyFindingCategory } from '../types';
 
 interface ConsistencyCheckModalProps {
   isOpen: boolean;
@@ -22,11 +23,22 @@ const severityLabel = {
   low: '低',
 } as const;
 
+const categoryLabel: Record<ConsistencyFindingCategory, string> = {
+  structure: '结构',
+  timeline: '时间线',
+  character: '角色',
+  fact: '事实',
+  style: '文风',
+  foreshadow: '伏笔',
+  metadata: '元数据',
+};
+
 export const ConsistencyCheckModal: React.FC<ConsistencyCheckModalProps> = ({ isOpen, onClose }) => {
   const { currentBook, setActiveNodeId, expandedNodeIds, toggleNodeExpansion } = useStore();
   const [loading, setLoading] = useState(false);
   const [findings, setFindings] = useState<ConsistencyFinding[]>([]);
   const [allNodes, setAllNodes] = useState<any[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<'all' | ConsistencyFindingCategory>('all');
 
   useEffect(() => {
     if (!isOpen || !currentBook) return;
@@ -34,12 +46,13 @@ export const ConsistencyCheckModal: React.FC<ConsistencyCheckModalProps> = ({ is
     const run = async () => {
       setLoading(true);
       try {
-        const [nodes, facts] = await Promise.all([
+        const [nodes, facts, characterStates] = await Promise.all([
           db.nodes.where('bookId').equals(currentBook.id).toArray(),
           db.facts.where('bookId').equals(currentBook.id).toArray(),
+          db.characterStates.where('bookId').equals(currentBook.id).toArray(),
         ]);
         setAllNodes(nodes);
-        const result = runConsistencyCheck(currentBook, nodes, facts);
+        const result = runConsistencyCheck(currentBook, nodes, facts, characterStates);
         setFindings(result);
       } finally {
         setLoading(false);
@@ -50,6 +63,10 @@ export const ConsistencyCheckModal: React.FC<ConsistencyCheckModalProps> = ({ is
   }, [isOpen, currentBook]);
 
   if (!isOpen) return null;
+
+  const visibleFindings = categoryFilter === 'all'
+    ? findings
+    : findings.filter((finding) => finding.category === categoryFilter);
 
   const jumpToNode = (nodeId?: string) => {
     if (!nodeId) return;
@@ -91,6 +108,30 @@ export const ConsistencyCheckModal: React.FC<ConsistencyCheckModalProps> = ({ is
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
+          {!loading && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setCategoryFilter('all')}
+                className={`px-2.5 py-1 text-xs rounded-full border ${categoryFilter === 'all' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+              >
+                全部 {findings.length}
+              </button>
+              {(Object.keys(categoryLabel) as ConsistencyFindingCategory[]).map((category) => {
+                const count = findings.filter((finding) => finding.category === category).length;
+                if (count === 0) return null;
+                return (
+                  <button
+                    key={category}
+                    onClick={() => setCategoryFilter(category)}
+                    className={`px-2.5 py-1 text-xs rounded-full border ${categoryFilter === category ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+                  >
+                    {categoryLabel[category]} {count}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {loading && (
             <div className="h-full flex items-center justify-center text-sm text-muted-foreground">检查中...</div>
           )}
@@ -101,11 +142,22 @@ export const ConsistencyCheckModal: React.FC<ConsistencyCheckModalProps> = ({ is
             </div>
           )}
 
-          {!loading && findings.map((finding) => (
+          {!loading && findings.length > 0 && visibleFindings.length === 0 && (
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+              当前分类下没有问题。
+            </div>
+          )}
+
+          {!loading && visibleFindings.map((finding) => (
             <div key={finding.id} className="border border-border rounded-xl p-4 bg-secondary/20">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-foreground">{finding.title}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="text-sm font-semibold text-foreground">{finding.title}</div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] border border-border text-muted-foreground">
+                      {categoryLabel[finding.category]}
+                    </span>
+                  </div>
                   <div className="text-xs text-muted-foreground mt-1 leading-6">{finding.description}</div>
                 </div>
                 <span className={`px-2 py-1 rounded-full text-[10px] ${severityStyle[finding.severity]}`}>
