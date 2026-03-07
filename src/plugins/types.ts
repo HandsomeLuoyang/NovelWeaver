@@ -10,10 +10,15 @@ export interface PluginRunResult {
   message: string;
 }
 
+export type PluginCategory = 'planning' | 'writing' | 'review';
+export type PluginRequirement = 'book' | 'scene' | 'selection';
+
 export interface PluginAction {
   id: string;
   title: string;
   description?: string;
+  requires?: PluginRequirement[];
+  contextHint?: string;
   run: (context: PluginRunContext) => Promise<PluginRunResult | void> | PluginRunResult | void;
 }
 
@@ -22,5 +27,6 @@ export interface NovelWeaverPlugin {
   name: string;
   version: string;
   description?: string;
+  category?: PluginCategory;
   actions: PluginAction[];
 }

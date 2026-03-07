@@ -15,12 +15,15 @@ export const metadataHelperPlugin: NovelWeaverPlugin = {
   id: 'builtin.metadata-helper',
   name: 'Metadata Helper',
   version: '1.0.0',
+  category: 'planning',
   description: '自动提取场景元数据（参与角色与冲突类型）',
   actions: [
     {
       id: 'metadata.extractParticipants',
       title: '提取当前场景参与角色',
       description: '根据正文与摘要自动匹配角色名并回填到场景元数据',
+      requires: ['book', 'scene'],
+      contextHint: '需要当前书籍角色表和一个场景节点。',
       run: async ({ currentBook, currentNode }) => {
         if (!currentBook || !currentNode || currentNode.type !== 'scene') {
           return { message: '请先选中一个场景节点再执行。' };
@@ -45,6 +48,8 @@ export const metadataHelperPlugin: NovelWeaverPlugin = {
       id: 'metadata.inferConflictType',
       title: '推断当前场景冲突类型',
       description: '根据标题/摘要/正文关键词自动填充冲突类型',
+      requires: ['scene'],
+      contextHint: '需要当前选中一个场景节点。',
       run: async ({ currentNode }) => {
         if (!currentNode || currentNode.type !== 'scene') {
           return { message: '请先选中一个场景节点再执行。' };

@@ -6,6 +6,7 @@ import { db } from '../db';
 import { Icons } from './Icons';
 import { useToast } from '../hooks/useToast';
 import { MATERIAL_TYPE_LABEL } from '../services/materialLibrary';
+import { ReferenceLinksField } from './ReferenceLinksField';
 
 interface MaterialLibraryModalProps {
   isOpen: boolean;
@@ -326,6 +327,17 @@ export const MaterialLibraryModal: React.FC<MaterialLibraryModalProps> = ({
                 {editingId ? '保存更新' : '保存素材'}
               </button>
             </div>
+
+            {editingId && (
+              <ReferenceLinksField
+                bookId={book.id}
+                entityType="material"
+                entityId={editingId}
+                nodes={nodes}
+                currentNodeId={currentNode?.id}
+                onJumpToNode={onJumpToNode}
+              />
+            )}
           </div>
         </div>
       </div>

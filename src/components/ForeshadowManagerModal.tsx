@@ -5,6 +5,7 @@ import { Book, ForeshadowEntry, ForeshadowStatus, StoryNode } from '../types';
 import { db } from '../db';
 import { Icons } from './Icons';
 import { useToast } from '../hooks/useToast';
+import { ReferenceLinksField } from './ReferenceLinksField';
 
 interface ForeshadowManagerModalProps {
   isOpen: boolean;
@@ -373,6 +374,17 @@ export const ForeshadowManagerModal: React.FC<ForeshadowManagerModalProps> = ({
                 清空
               </button>
             </div>
+
+            {editingId && (
+              <ReferenceLinksField
+                bookId={book.id}
+                entityType="foreshadow"
+                entityId={editingId}
+                nodes={nodes}
+                currentNodeId={currentNode?.id}
+                onJumpToNode={onJumpToNode}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { Icons } from './Icons';
-import { AIModel } from '../types';
+import { AIModel, PromptTaskType } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { useToast } from '../hooks/useToast';
 import { testModelAvailability } from '../services/modelProbe';
@@ -12,7 +12,17 @@ interface Props {
 }
 
 export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
-    const { models, modelConfig, addModel, updateModel, removeModel, updateModelConfig } = useStore();
+    const {
+        models,
+        modelConfig,
+        modelProbeLog,
+        addModel,
+        updateModel,
+        removeModel,
+        updateModelConfig,
+        addModelProbeLogEntry,
+        clearModelProbeLog,
+    } = useStore();
     const toast = useToast();
     const [activeTab, setActiveTab] = useState<'models' | 'assignment' | 'creativity'>('models');
 
@@ -41,8 +51,6 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         twistIntensity: 0.55,
         paceVariance: 0.5,
     };
-
-    if (!isOpen) return null;
 
     const applyCreativityPreset = (preset: 'balanced' | 'wild' | 'stable' | 'anti-block') => {
         if (preset === 'balanced') {
@@ -135,10 +143,28 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         try {
             const result = await testModelAvailability(model);
             const text = `连接成功 · ${result.provider === 'openai' ? 'OpenAI兼容' : 'Gemini'} · ${result.latencyMs}ms`;
+            addModelProbeLogEntry({
+                id: uuidv4(),
+                modelId: model.id,
+                modelName: model.name,
+                provider: result.provider,
+                timestamp: Date.now(),
+                success: true,
+                latencyMs: result.latencyMs,
+            });
             setTestMessages((prev) => ({ ...prev, [model.id]: { type: 'success', text } }));
             toast.success(`模型可用：${model.name}`);
         } catch (error: any) {
             const text = error?.message || '模型测试失败';
+            addModelProbeLogEntry({
+                id: uuidv4(),
+                modelId: model.id,
+                modelName: model.name,
+                provider: runtimeProvider(model),
+                timestamp: Date.now(),
+                success: false,
+                errorMessage: text,
+            });
             setTestMessages((prev) => ({ ...prev, [model.id]: { type: 'error', text } }));
             toast.error(`模型不可用：${text}`);
         } finally {
@@ -153,10 +179,28 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
         try {
             const result = await testModelAvailability(model);
             const text = `连接成功 · ${result.provider === 'openai' ? 'OpenAI兼容' : 'Gemini'} · ${result.latencyMs}ms`;
+            addModelProbeLogEntry({
+                id: uuidv4(),
+                modelId: model.id,
+                modelName: model.name,
+                provider: result.provider,
+                timestamp: Date.now(),
+                success: true,
+                latencyMs: result.latencyMs,
+            });
             setFormTestMessage({ type: 'success', text });
             toast.success(`模型可用：${model.modelName}`);
         } catch (error: any) {
             const text = error?.message || '模型测试失败';
+            addModelProbeLogEntry({
+                id: uuidv4(),
+                modelId: model.id,
+                modelName: model.name,
+                provider: runtimeProvider(model),
+                timestamp: Date.now(),
+                success: false,
+                errorMessage: text,
+            });
             setFormTestMessage({ type: 'error', text });
             toast.error(`模型不可用：${text}`);
         } finally {
@@ -188,14 +232,15 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const assignmentItems: Array<{
         key: keyof Pick<typeof modelConfig, 'genesisModelId' | 'expansionModelId' | 'draftingModelId' | 'polishingModelId' | 'chatModelId'>;
+        taskType: PromptTaskType;
         label: string;
         desc: string;
     }> = [
-        { key: 'genesisModelId', label: '创世引擎', desc: '生成书名、梗概、世界观与初始卷。' },
-        { key: 'expansionModelId', label: '结构扩写', desc: '递归拆解章节、细化剧情节点。' },
-        { key: 'draftingModelId', label: '正文撰写', desc: '基于上下文生成场景正文。' },
-        { key: 'polishingModelId', label: '润色编辑', desc: '选区或整段润色、提升表达。' },
-        { key: 'chatModelId', label: 'AI 助手', desc: '对话答疑、头脑风暴。' },
+        { key: 'genesisModelId', taskType: 'genesis', label: '创世引擎', desc: '生成书名、梗概、世界观与初始卷。' },
+        { key: 'expansionModelId', taskType: 'expansion', label: '结构扩写', desc: '递归拆解章节、细化剧情节点。' },
+        { key: 'draftingModelId', taskType: 'drafting', label: '正文撰写', desc: '基于上下文生成场景正文。' },
+        { key: 'polishingModelId', taskType: 'polishing', label: '润色编辑', desc: '选区或整段润色、提升表达。' },
+        { key: 'chatModelId', taskType: 'chat', label: 'AI 助手', desc: '对话答疑、头脑风暴。' },
     ];
 
     const filterKeyword = modelFilter.trim().toLowerCase();
@@ -223,6 +268,22 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
     const assignedModelCount = models.filter((model) => (modelAssignments[model.id] || []).length > 0).length;
     const unassignedModelCount = Math.max(0, modelCount - assignedModelCount);
+    const probeStats = useMemo(() => models.map((model) => {
+        const logs = modelProbeLog.filter((entry) => entry.modelId === model.id);
+        const successLogs = logs.filter((entry) => entry.success);
+        const avgLatency = successLogs.length > 0
+            ? Math.round(successLogs.reduce((sum, entry) => sum + (entry.latencyMs || 0), 0) / successLogs.length)
+            : null;
+        return {
+            modelId: model.id,
+            logs,
+            successRate: logs.length > 0 ? Math.round((successLogs.length / logs.length) * 100) : null,
+            avgLatency,
+            last: logs[0] || null,
+        };
+    }), [models, modelProbeLog]);
+
+    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
@@ -325,6 +386,7 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                     const message = testMessages[model.id];
                                     const assignments = modelAssignments[model.id] || [];
                                     const isEditing = editingModelId === model.id;
+                                    const stats = probeStats.find((entry) => entry.modelId === model.id);
                                     return (
                                         <div
                                             key={model.id}
@@ -394,6 +456,22 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                                     </span>
                                                 )}
                                             </div>
+                                            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+                                                <div className="rounded-lg border border-border/70 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+                                                    成功率：{stats?.successRate !== null && stats?.successRate !== undefined ? `${stats.successRate}%` : '暂无'}
+                                                </div>
+                                                <div className="rounded-lg border border-border/70 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+                                                    平均耗时：{stats?.avgLatency ? `${stats.avgLatency}ms` : '暂无'}
+                                                </div>
+                                                <div className="rounded-lg border border-border/70 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+                                                    最近状态：{stats?.last ? (stats.last.success ? '可用' : '失败') : '未探测'}
+                                                </div>
+                                            </div>
+                                            {stats?.last && !stats.last.success && stats.last.errorMessage && (
+                                                <div className="mt-2 text-[11px] text-red-400">
+                                                    最近失败：{stats.last.errorMessage}
+                                                </div>
+                                            )}
                                             {message && (
                                                 <div className={`mt-2 text-xs ${message.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
                                                     {message.text}
@@ -407,6 +485,46 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                         没有匹配的模型，换个关键词试试。
                                     </div>
                                 )}
+                            </div>
+
+                            <div className="rounded-xl border border-border bg-card/70 p-4">
+                                <div className="flex items-center justify-between gap-3 mb-3">
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-foreground">模型可靠性面板</h4>
+                                        <p className="text-xs text-muted-foreground mt-1">最近探测记录、失败原因和响应耗时会统一沉淀在这里。</p>
+                                    </div>
+                                    <button
+                                        onClick={clearModelProbeLog}
+                                        className="px-3 py-1.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground"
+                                    >
+                                        清空记录
+                                    </button>
+                                </div>
+                                <div className="space-y-2 max-h-64 overflow-y-auto scrollbar-thin">
+                                    {modelProbeLog.length === 0 && (
+                                        <div className="rounded-lg border border-dashed border-border bg-background/40 p-4 text-xs text-muted-foreground text-center">
+                                            还没有探测记录，先测试一个模型。
+                                        </div>
+                                    )}
+                                    {modelProbeLog.slice(0, 12).map((entry) => (
+                                        <div key={entry.id} className="rounded-lg border border-border bg-background/50 px-3 py-2 flex items-center justify-between gap-3 text-xs">
+                                            <div className="min-w-0">
+                                                <div className="text-foreground font-medium truncate">{entry.modelName}</div>
+                                                <div className="text-muted-foreground mt-1 truncate">
+                                                    {new Date(entry.timestamp).toLocaleString()} · {entry.provider === 'openai' ? 'OpenAI兼容' : 'Gemini'}
+                                                </div>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <div className={entry.success ? 'text-emerald-400' : 'text-red-400'}>
+                                                    {entry.success ? `成功 ${entry.latencyMs || 0}ms` : '失败'}
+                                                </div>
+                                                {!entry.success && entry.errorMessage && (
+                                                    <div className="text-muted-foreground max-w-56 truncate">{entry.errorMessage}</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -428,6 +546,8 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                 {assignmentItems.map((item) => {
                                     const currentModel = models.find((model) => model.id === modelConfig[item.key]);
                                     const selectedValue = modelConfig[item.key] || '';
+                                    const fallbackValue = modelConfig.fallbackModelIds[item.taskType] || '';
+                                    const retryValue = modelConfig.maxRetries[item.taskType] || 1;
                                     return (
                                         <div key={item.key} className="rounded-xl border border-border bg-card/70 p-4">
                                             <label className="text-sm font-semibold text-foreground block">{item.label}</label>
@@ -453,6 +573,45 @@ export const ModelSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                                                     当前：<span className="text-foreground">{currentModel.name}</span>
                                                 </p>
                                             )}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                                                <label className="text-xs text-muted-foreground block">
+                                                    备用模型
+                                                    <select
+                                                        value={fallbackValue}
+                                                        onChange={(e) => updateModelConfig({
+                                                            fallbackModelIds: {
+                                                                ...modelConfig.fallbackModelIds,
+                                                                [item.taskType]: e.target.value || undefined,
+                                                            },
+                                                        })}
+                                                        className="mt-1 w-full bg-input border border-border text-foreground text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-primary"
+                                                    >
+                                                        <option value="">不设置备用</option>
+                                                        {models.filter((model) => model.id !== selectedValue).map((model) => (
+                                                            <option key={model.id} value={model.id}>
+                                                                {model.name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </label>
+                                                <label className="text-xs text-muted-foreground block">
+                                                    最大重试次数
+                                                    <select
+                                                        value={retryValue}
+                                                        onChange={(e) => updateModelConfig({
+                                                            maxRetries: {
+                                                                ...modelConfig.maxRetries,
+                                                                [item.taskType]: Number(e.target.value),
+                                                            },
+                                                        })}
+                                                        className="mt-1 w-full bg-input border border-border text-foreground text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-primary"
+                                                    >
+                                                        <option value={1}>1 次</option>
+                                                        <option value={2}>2 次</option>
+                                                        <option value={3}>3 次</option>
+                                                    </select>
+                                                </label>
+                                            </div>
                                         </div>
                                     );
                                 })}

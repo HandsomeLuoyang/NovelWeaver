@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { FactCandidate, FactCategory, FactEntry } from '../types';
 import { Icons } from './Icons';
 import { db } from '../db';
 import { useToast } from '../hooks/useToast';
 import { extractFactCandidatesFromNodes, FACT_CATEGORY_LABEL } from '../services/factLibrary';
+import { ReferenceLinksField } from './ReferenceLinksField';
 
 interface FactLibraryPanelProps {
   bookId: string;
@@ -37,6 +39,10 @@ export const FactLibraryPanel: React.FC<FactLibraryPanelProps> = ({
   const [locked, setLocked] = useState(false);
   const [reliability, setReliability] = useState<'confirmed' | 'tentative'>('confirmed');
   const [extracting, setExtracting] = useState(false);
+  const nodes = useLiveQuery(async () => {
+    const rows = await db.nodes.where('bookId').equals(bookId).toArray();
+    return rows.sort((a, b) => a.order - b.order);
+  }, [bookId]) || [];
 
   const activeFacts = useMemo(() => sortFacts(facts.filter((fact) => fact.status === 'active')), [facts]);
 
@@ -317,6 +323,15 @@ export const FactLibraryPanel: React.FC<FactLibraryPanelProps> = ({
               清空
             </button>
           </div>
+
+          {editingId && (
+            <ReferenceLinksField
+              bookId={bookId}
+              entityType="fact"
+              entityId={editingId}
+              nodes={nodes}
+            />
+          )}
         </div>
 
         <div className="border border-border rounded-xl bg-secondary/20 p-3 h-[220px] flex flex-col">

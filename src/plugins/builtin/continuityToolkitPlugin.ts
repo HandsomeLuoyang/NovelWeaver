@@ -43,12 +43,15 @@ export const continuityToolkitPlugin: NovelWeaverPlugin = {
   id: 'builtin.continuity-toolkit',
   name: 'Continuity Toolkit',
   version: '1.0.0',
+  category: 'review',
   description: '连贯性助手：时间/地点推断与场景标签自动归类',
   actions: [
     {
       id: 'continuity.inferTimeAndLocation',
       title: '推断时间与地点标签',
       description: '基于标题/摘要/正文推断 timeTag 与 location',
+      requires: ['scene'],
+      contextHint: '需要当前选中一个场景节点。',
       run: async ({ currentNode }) => {
         if (!currentNode || currentNode.type !== 'scene') {
           return { message: '请先选中一个场景节点再执行。' };
@@ -80,6 +83,8 @@ export const continuityToolkitPlugin: NovelWeaverPlugin = {
       id: 'continuity.autoTagScene',
       title: '自动打场景标签',
       description: '按关键词自动生成 scene tags（战斗/调查/情感等）',
+      requires: ['scene'],
+      contextHint: '需要当前选中一个场景节点。',
       run: async ({ currentNode }) => {
         if (!currentNode || currentNode.type !== 'scene') {
           return { message: '请先选中一个场景节点再执行。' };

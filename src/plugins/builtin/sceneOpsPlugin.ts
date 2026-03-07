@@ -37,12 +37,15 @@ export const sceneOpsPlugin: NovelWeaverPlugin = {
   id: 'builtin.scene-ops',
   name: 'Scene Ops',
   version: '1.0.0',
+  category: 'writing',
   description: '场景效率工具：状态校准、摘要同步、节奏模板注入',
   actions: [
     {
       id: 'scene.syncStatusByLength',
       title: '按内容长度同步场景状态',
       description: '根据正文长度自动设置 empty / outlined / drafted',
+      requires: ['scene'],
+      contextHint: '需要当前选中一个场景节点。',
       run: async ({ currentNode }) => {
         if (!currentNode || currentNode.type !== 'scene') {
           return { message: '请先选中一个场景节点再执行。' };
@@ -57,6 +60,8 @@ export const sceneOpsPlugin: NovelWeaverPlugin = {
       id: 'scene.syncSummaryFromContent',
       title: '用正文首段更新摘要',
       description: '从正文提取简短摘要并回填到当前场景摘要',
+      requires: ['scene'],
+      contextHint: '需要当前选中一个场景节点。',
       run: async ({ currentNode }) => {
         if (!currentNode || currentNode.type !== 'scene') {
           return { message: '请先选中一个场景节点再执行。' };
@@ -75,6 +80,8 @@ export const sceneOpsPlugin: NovelWeaverPlugin = {
       id: 'scene.insertBeatTemplate',
       title: '插入场景节奏模板',
       description: '为当前场景注入目标/冲突/转折/结果模板',
+      requires: ['scene'],
+      contextHint: '需要当前选中一个场景节点。',
       run: async ({ currentNode }) => {
         if (!currentNode || currentNode.type !== 'scene') {
           return { message: '请先选中一个场景节点再执行。' };
