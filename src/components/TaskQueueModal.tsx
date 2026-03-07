@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { createAutoSnapshotForParent, db, saveHistory, updateBookWordCount } from '../db';
+import { db } from '../db';
 import { StoryNode } from '../types';
 import { useToast } from '../hooks/useToast';
 import { Icons } from './Icons';
 import { useStore } from '../store';
 import { DiffViewer } from './DiffViewer';
-import { v4 as uuidv4 } from 'uuid';
+import { applyReviewItem } from '../services/reviewInbox';
 
 interface TaskQueueModalProps {
   isOpen: boolean;
   onClose: () => void;
   node: StoryNode | null;
   selectedText?: string;
+  initialTab?: 'queue' | 'results';
 }
 
 const statusMap = {
@@ -29,11 +30,11 @@ const draftLengthLabel = {
   long: '长',
 } as const;
 
-export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose, node, selectedText }) => {
+export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose, node, selectedText, initialTab = 'queue' }) => {
   const {
     currentBook,
     taskQueue,
-    taskResults,
+    reviewInbox,
     isTaskQueuePaused,
     isTaskQueueRunning,
     taskQueueConcurrency,
@@ -45,11 +46,11 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
     clearCompletedTasks,
     setTaskQueuePaused,
     setTaskQueueConcurrency,
-    removeTaskResult,
+    updateReviewItemStatus,
   } = useStore();
   const toast = useToast();
 
-  const [activeTab, setActiveTab] = useState<'queue' | 'results'>('queue');
+  const [activeTab, setActiveTab] = useState<'queue' | 'results'>(initialTab);
   const [previewResultId, setPreviewResultId] = useState<string | null>(null);
   const [draftLength, setDraftLength] = useState<'short' | 'medium' | 'long'>('medium');
   const [contextLimit, setContextLimit] = useState(5);
@@ -59,11 +60,12 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
   useEffect(() => {
     if (!isOpen) return;
     setPromptProfileId(activePromptProfileId);
-  }, [isOpen, activePromptProfileId]);
+    setActiveTab(initialTab);
+  }, [isOpen, activePromptProfileId, initialTab]);
 
   const currentBookResults = useMemo(
-    () => taskResults.filter((result) => !currentBook || result.bookId === currentBook.id),
-    [taskResults, currentBook]
+    () => reviewInbox.filter((result) => (!currentBook || result.bookId === currentBook.id) && result.status === 'pending'),
+    [reviewInbox, currentBook]
   );
 
   if (!isOpen) return null;
@@ -187,46 +189,12 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
   };
 
   const applyTaskResult = async (resultId: string) => {
-    const result = taskResults.find((item) => item.id === resultId);
+    const result = reviewInbox.find((item) => item.id === resultId);
     if (!result) return;
-    const payload = result.payload;
 
     try {
-      if (payload.kind === 'expansion') {
-        const existingChildrenCount = await db.nodes.where({ parentId: result.nodeId }).count();
-        if (existingChildrenCount > 0) {
-          await createAutoSnapshotForParent(result.nodeId, 'task-result-apply');
-        }
-
-        const newNodes = payload.nodes.map((item, index) => ({
-          id: uuidv4(),
-          bookId: result.bookId,
-          parentId: result.nodeId,
-          type: payload.childType,
-          title: item.title,
-          summary: item.summary,
-          status: 'empty' as const,
-          order: existingChildrenCount + index,
-        }));
-
-        if (newNodes.length > 0) {
-          await db.nodes.bulkAdd(newNodes);
-        }
-        await db.nodes.update(result.nodeId, { status: 'outlined' });
-      } else {
-        await db.nodes.update(result.nodeId, {
-          content: payload.generatedContent,
-          status: 'drafted',
-        });
-        await saveHistory(
-          result.nodeId,
-          payload.generatedContent,
-          payload.mode === 'draft' ? 'ai-draft' : 'ai-polish'
-        );
-        await updateBookWordCount(result.bookId);
-      }
-
-      removeTaskResult(resultId);
+      await applyReviewItem(result);
+      updateReviewItemStatus(resultId, 'applied');
       toast.success('已应用任务结果');
     } catch (error) {
       console.error(error);
@@ -235,7 +203,7 @@ export const TaskQueueModal: React.FC<TaskQueueModalProps> = ({ isOpen, onClose,
   };
 
   const discardTaskResult = (resultId: string) => {
-    removeTaskResult(resultId);
+    updateReviewItemStatus(resultId, 'discarded');
     toast.info('已丢弃任务结果');
   };
 

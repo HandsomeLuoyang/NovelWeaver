@@ -1,5 +1,6 @@
 export type NodeType = 'volume' | 'arc' | 'chapter' | 'scene';
 export type NodeStatus = 'empty' | 'outlined' | 'drafted';
+export type WorkspaceMode = 'write' | 'plan' | 'review' | 'publish';
 
 export type WritingStyle =
   | 'realistic'      // 现实主义（平实、克制）
@@ -148,6 +149,8 @@ export interface ModelConfig {
   draftingModelId: string;
   polishingModelId: string;
   chatModelId: string;
+  fallbackModelIds: Partial<Record<PromptTaskType, string>>;
+  maxRetries: Record<PromptTaskType, number>;
   // 创意度控制（温度参数 0-1）
   creativityLevel: {
     genesis: number;      // 0.8-1.0 高创意
@@ -186,6 +189,7 @@ export interface EditorTypographySettings {
 }
 
 export type PromptTaskType = 'genesis' | 'expansion' | 'drafting' | 'polishing' | 'chat';
+export type ConsistencyFindingCategory = 'structure' | 'timeline' | 'character' | 'fact' | 'style' | 'foreshadow' | 'metadata';
 
 export interface PromptTemplatePair {
   systemPrompt: string;
@@ -216,6 +220,8 @@ export interface ExportData {
   facts?: FactEntry[];
   foreshadows?: ForeshadowEntry[];
   materials?: MaterialEntry[];
+  characterStates?: SceneCharacterState[];
+  references?: ReferenceLink[];
 }
 
 export type HistoryAction = 'manual' | 'ai-draft' | 'ai-polish' | 'restore';
@@ -253,6 +259,8 @@ export interface DeletedBookEntry {
     factCandidates?: FactCandidate[];
     foreshadows?: ForeshadowEntry[];
     materials?: MaterialEntry[];
+    characterStates?: SceneCharacterState[];
+    references?: ReferenceLink[];
   };
 }
 
@@ -267,6 +275,8 @@ export interface DeletedNodeEntry {
     nodes: StoryNode[];
     history: HistoryEntry[];
     snapshots: StructureSnapshot[];
+    characterStates?: SceneCharacterState[];
+    references?: ReferenceLink[];
   };
 }
 
@@ -297,6 +307,12 @@ export interface AITaskParams {
   polishRange?: AITaskPolishRange;
   selectedText?: string;
   promptProfileId?: string;
+  includeHierarchyContext?: boolean;
+  includeLinearContext?: boolean;
+  includeSemanticContext?: boolean;
+  includeFactContext?: boolean;
+  includeMaterialContext?: boolean;
+  includeStyleBible?: boolean;
 }
 
 export interface AITask {
@@ -335,6 +351,48 @@ export interface AITaskResult {
       };
 }
 
+export type AIReviewSource = 'direct' | 'queue';
+export type AIReviewStatus = 'pending' | 'applied' | 'discarded';
+
+export interface AIReviewItem extends AITaskResult {
+  source: AIReviewSource;
+  status: AIReviewStatus;
+  reviewedAt?: number;
+}
+
+export interface SceneCharacterState {
+  id: string;
+  bookId: string;
+  nodeId: string;
+  characterName: string;
+  location: string;
+  physicalState: string;
+  knowledgeState: string;
+  inventory: string;
+  note: string;
+  updatedAt: number;
+}
+
+export interface BookCheckpointPayload {
+  book: Book;
+  nodes: StoryNode[];
+  facts: FactEntry[];
+  foreshadows: ForeshadowEntry[];
+  materials: MaterialEntry[];
+  characterStates: SceneCharacterState[];
+  references: ReferenceLink[];
+}
+
+export interface BookCheckpoint {
+  id: string;
+  bookId: string;
+  name: string;
+  createdAt: number;
+  wordCount: number;
+  nodeCount: number;
+  payload: BookCheckpointPayload;
+}
+
 export interface WritingGoal {
   bookId: string;
   totalTargetWords: number;
@@ -363,4 +421,38 @@ export interface AIUsageEntry {
   outputChars: number;
   estimatedTokens: number;
   estimatedCostUSD: number;
+}
+
+export interface SceneTemplate {
+  id: string;
+  name: string;
+  description: string;
+  builtin?: boolean;
+  metaPreset: NonNullable<StoryNode['meta']>;
+  summaryPrompt: string;
+  draftingPrompt: string;
+  updatedAt: number;
+}
+
+export type ReferenceEntityType = 'fact' | 'foreshadow' | 'material';
+
+export interface ReferenceLink {
+  id: string;
+  bookId: string;
+  entityType: ReferenceEntityType;
+  entityId: string;
+  nodeId: string;
+  excerpt: string;
+  createdAt: number;
+}
+
+export interface ModelProbeLogEntry {
+  id: string;
+  modelId: string;
+  modelName: string;
+  provider: 'google' | 'openai';
+  timestamp: number;
+  success: boolean;
+  latencyMs?: number;
+  errorMessage?: string;
 }

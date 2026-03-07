@@ -25,7 +25,20 @@ const handleAIDraft = useCallback(async (
         book: Book,
         onContentUpdate: (content: string) => void,
         settings: DraftGenerationSettings,
-        options?: { persist?: boolean }
+        options?: {
+            persist?: boolean;
+            contextOverrides?: {
+                hierarchyContext?: string;
+                linearContext?: string;
+                semanticContext?: string;
+                factSummary?: string;
+                factHardConstraints?: string;
+                factSoftContext?: string;
+                materialSummary?: string;
+                materialContext?: string;
+                styleBiblePrompt?: string;
+            };
+        }
     ) => {
         setIsGeneratingInternal(true);
         setGenerating(true);
@@ -63,6 +76,7 @@ const handleAIDraft = useCallback(async (
                     antiBlockHint: settings.antiBlock
                         ? '启用：若当前推进受阻，务必给出可执行行动并抛出下一轮悬念'
                         : '关闭：按常规叙事推进',
+                    contextOverrides: options?.contextOverrides,
                 }
             );
 
@@ -92,7 +106,17 @@ const handleAIDraft = useCallback(async (
         book: Book,
         nodeId: string,
         onContentUpdate: (newFullContent: string) => void,
-        options?: { persist?: boolean }
+        options?: {
+            persist?: boolean;
+            contextOverrides?: {
+                factSummary?: string;
+                factHardConstraints?: string;
+                factSoftContext?: string;
+                materialSummary?: string;
+                materialContext?: string;
+                styleBiblePrompt?: string;
+            };
+        }
     ) => {
         setIsGeneratingInternal(true);
         setGenerating(true);
@@ -108,7 +132,8 @@ const handleAIDraft = useCallback(async (
                 (chunk) => {
                     rawPolishResponse += chunk;
                 },
-                abortControllerRef.current.signal
+                abortControllerRef.current.signal,
+                { contextOverrides: options?.contextOverrides }
             );
 
             const polishedSegment = extractPolishedSegment(rawPolishResponse);

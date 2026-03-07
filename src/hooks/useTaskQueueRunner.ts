@@ -5,6 +5,18 @@ import { expandNode, draftScene, polishText } from '../services/geminiService';
 import { extractPolishedSegment } from '../services/polishUtils';
 import { AITask, NodeType } from '../types';
 
+const TASK_TYPE_TO_PROMPT = {
+  expansion: 'expansion',
+  draft: 'drafting',
+  polish: 'polishing',
+} as const;
+
+const TASK_TYPE_TO_MODEL_KEY = {
+  expansion: 'expansionModelId',
+  draft: 'draftingModelId',
+  polish: 'polishingModelId',
+} as const;
+
 const getChildType = (type: NodeType): NodeType | null => {
   switch (type) {
     case 'volume':
@@ -55,7 +67,17 @@ const executeTask = async (task: AITask): Promise<ExecutedTaskResult> => {
       book,
       childType,
       undefined,
-      { promptProfileId: task.params?.promptProfileId }
+      {
+        promptProfileId: task.params?.promptProfileId,
+        contextOverrides: {
+          factSummary: task.params?.includeFactContext === false ? '' : undefined,
+          factHardConstraints: task.params?.includeFactContext === false ? '' : undefined,
+          factSoftContext: task.params?.includeFactContext === false ? '' : undefined,
+          materialSummary: task.params?.includeMaterialContext === false ? '' : undefined,
+          materialContext: task.params?.includeMaterialContext === false ? '' : undefined,
+          styleBiblePrompt: task.params?.includeStyleBible === false ? '' : undefined,
+        },
+      }
     );
 
     return {
@@ -87,6 +109,17 @@ const executeTask = async (task: AITask): Promise<ExecutedTaskResult> => {
       {
         promptProfileId: task.params?.promptProfileId,
         draftLengthHint: draftLengthHintByPreset(task.params?.draftLength),
+        contextOverrides: {
+          hierarchyContext: task.params?.includeHierarchyContext === false ? '（已关闭上级结构上下文）' : undefined,
+          linearContext: task.params?.includeLinearContext === false ? '（已关闭线性前文）' : undefined,
+          semanticContext: task.params?.includeSemanticContext === false ? '（已关闭语义参考）' : undefined,
+          factSummary: task.params?.includeFactContext === false ? '' : undefined,
+          factHardConstraints: task.params?.includeFactContext === false ? '' : undefined,
+          factSoftContext: task.params?.includeFactContext === false ? '' : undefined,
+          materialSummary: task.params?.includeMaterialContext === false ? '' : undefined,
+          materialContext: task.params?.includeMaterialContext === false ? '' : undefined,
+          styleBiblePrompt: task.params?.includeStyleBible === false ? '' : undefined,
+        },
       }
     );
 
@@ -116,12 +149,20 @@ const executeTask = async (task: AITask): Promise<ExecutedTaskResult> => {
     (chunk) => {
       rawPolished += chunk;
     },
-    undefined,
-    {
-      promptProfileId: task.params?.promptProfileId,
-      polishRange,
-    }
-  );
+      undefined,
+      {
+        promptProfileId: task.params?.promptProfileId,
+        polishRange,
+        contextOverrides: {
+          factSummary: task.params?.includeFactContext === false ? '' : undefined,
+          factHardConstraints: task.params?.includeFactContext === false ? '' : undefined,
+          factSoftContext: task.params?.includeFactContext === false ? '' : undefined,
+          materialSummary: task.params?.includeMaterialContext === false ? '' : undefined,
+          materialContext: task.params?.includeMaterialContext === false ? '' : undefined,
+          styleBiblePrompt: task.params?.includeStyleBible === false ? '' : undefined,
+        },
+      }
+    );
 
   const polishedSegment = extractPolishedSegment(rawPolished).trim();
   if (!polishedSegment) {
@@ -148,6 +189,54 @@ const executeTask = async (task: AITask): Promise<ExecutedTaskResult> => {
   };
 };
 
+const executeTaskWithResilience = async (task: AITask): Promise<ExecutedTaskResult> => {
+  const promptTaskType = TASK_TYPE_TO_PROMPT[task.type];
+  const assignmentKey = TASK_TYPE_TO_MODEL_KEY[task.type];
+  const { modelConfig } = useStore.getState();
+  const primaryModelId = modelConfig[assignmentKey];
+  const fallbackModelId = modelConfig.fallbackModelIds[promptTaskType];
+  const retries = Math.max(1, modelConfig.maxRetries[promptTaskType] || 1);
+
+  const runWithModel = async (modelId: string) => {
+    if (!modelId || modelConfig[assignmentKey] === modelId) {
+      return executeTask(task);
+    }
+
+    const previousConfig = useStore.getState().modelConfig;
+    useStore.setState({
+      modelConfig: {
+        ...previousConfig,
+        [assignmentKey]: modelId,
+      },
+    });
+
+    try {
+      return await executeTask(task);
+    } finally {
+      useStore.setState({ modelConfig: previousConfig });
+    }
+  };
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return await runWithModel(primaryModelId);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (fallbackModelId && fallbackModelId !== primaryModelId) {
+    try {
+      return await runWithModel(fallbackModelId);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('任务执行失败');
+};
+
 export const useTaskQueueRunner = () => {
   const {
     taskQueue,
@@ -159,7 +248,7 @@ export const useTaskQueueRunner = () => {
     setGenerationStatus,
     setTaskQueueRunning,
     updateTaskStatus,
-    addTaskResult,
+    addReviewItem,
   } = useStore();
 
   const runningTaskIdsRef = useRef<Set<string>>(new Set());
@@ -195,8 +284,8 @@ export const useTaskQueueRunner = () => {
 
       const run = async () => {
         try {
-          const result = await executeTask(task);
-          addTaskResult({
+          const result = await executeTaskWithResilience(task);
+          addReviewItem({
             id: createId(),
             taskId: task.id,
             type: task.type,
@@ -205,6 +294,8 @@ export const useTaskQueueRunner = () => {
             nodeTitle: task.nodeTitle,
             createdAt: Date.now(),
             promptProfileId: task.params?.promptProfileId,
+            source: 'queue',
+            status: 'pending',
             payload: result.kind === 'expansion'
               ? {
                   kind: 'expansion',
@@ -246,6 +337,6 @@ export const useTaskQueueRunner = () => {
     setTaskQueueRunning,
     taskQueue,
     updateTaskStatus,
-    addTaskResult,
+    addReviewItem,
   ]);
 };

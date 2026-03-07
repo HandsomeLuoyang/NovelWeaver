@@ -129,6 +129,18 @@ interface TaskPromptOptions {
   promptProfileId?: string;
 }
 
+interface TaskContextOverrides {
+  hierarchyContext?: string;
+  linearContext?: string;
+  semanticContext?: string;
+  factSummary?: string;
+  factHardConstraints?: string;
+  factSoftContext?: string;
+  materialSummary?: string;
+  materialContext?: string;
+  styleBiblePrompt?: string;
+}
+
 export interface InspirationPack {
   direction: string;
   nextBeats: string[];
@@ -536,7 +548,7 @@ export const expandNode = async (
   book: Book,
   childType: NodeType,
   signal?: AbortSignal,
-  options?: { promptProfileId?: string }
+  options?: { promptProfileId?: string; contextOverrides?: TaskContextOverrides }
 ): Promise<ExpansionResponse> => {
   ensureNotAborted(signal);
   updateStatus(`正在分析节点: ${parentNode.title}...`);
@@ -544,6 +556,15 @@ export const expandNode = async (
   const controls = getPromptControls('expansion', config);
   const factContext = await getFactContextForBook(book.id);
   const materialContext = await getMaterialContextForBook(book.id, `${parentNode.title}\n${parentNode.summary}`);
+  const effectiveFactContext = {
+    factSummary: options?.contextOverrides?.factSummary ?? factContext.factSummary,
+    factHardConstraints: options?.contextOverrides?.factHardConstraints ?? factContext.factHardConstraints,
+    factSoftContext: options?.contextOverrides?.factSoftContext ?? factContext.factSoftContext,
+  };
+  const effectiveMaterialContext = {
+    materialSummary: options?.contextOverrides?.materialSummary ?? materialContext.materialSummary,
+    materialContext: options?.contextOverrides?.materialContext ?? materialContext.materialContext,
+  };
   const prompts = getTaskPrompts('expansion', {
     controls,
     bookTitle: book.title,
@@ -553,15 +574,15 @@ export const expandNode = async (
     parentTitle: parentNode.title,
     parentSummary: parentNode.summary,
     childTypeName: getNodeTypeName(childType),
-    factSummary: factContext.factSummary,
-    factHardConstraints: factContext.factHardConstraints,
-    factSoftContext: factContext.factSoftContext,
-    materialSummary: materialContext.materialSummary,
-    materialContext: materialContext.materialContext,
+    factSummary: effectiveFactContext.factSummary,
+    factHardConstraints: effectiveFactContext.factHardConstraints,
+    factSoftContext: effectiveFactContext.factSoftContext,
+    materialSummary: effectiveMaterialContext.materialSummary,
+    materialContext: effectiveMaterialContext.materialContext,
   }, options);
   const prompt = prompts.userPrompt;
-  const styleBiblePrompt = buildStyleBiblePrompt(book);
-  const expansionSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`;
+  const styleBiblePrompt = options?.contextOverrides?.styleBiblePrompt ?? buildStyleBiblePrompt(book);
+  const expansionSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${effectiveFactContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${effectiveMaterialContext.materialContext}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -633,7 +654,7 @@ export const draftScene = async (
   semanticContext: string,
   onStream: (chunk: string) => void,
   signal?: AbortSignal,
-  options?: { promptProfileId?: string; draftLengthHint?: string; creativeModeHint?: string; antiBlockHint?: string }
+  options?: { promptProfileId?: string; draftLengthHint?: string; creativeModeHint?: string; antiBlockHint?: string; contextOverrides?: TaskContextOverrides }
 ): Promise<string> => {
   ensureNotAborted(signal);
   updateStatus("正在读取全书大纲与前文记忆...");
@@ -641,33 +662,44 @@ export const draftScene = async (
   const controls = getPromptControls('drafting', config);
   const factContext = await getFactContextForBook(book.id);
   const materialContext = await getMaterialContextForBook(book.id, `${node.title}\n${node.summary}\n${linearContext.slice(-500)}`);
-
-  const hierarchyContext = ancestors.length > 0
+  const defaultHierarchyContext = ancestors.length > 0
     ? ancestors.map(a => `[${getNodeTypeName(a.type)}: ${a.title}]\n梗概: ${a.summary}`).join('\n\n')
     : "无上级结构信息";
+  const effectiveHierarchyContext = options?.contextOverrides?.hierarchyContext ?? defaultHierarchyContext;
+  const effectiveLinearContext = options?.contextOverrides?.linearContext ?? (linearContext ? linearContext : "（这是故事的开篇）");
+  const effectiveSemanticContext = options?.contextOverrides?.semanticContext ?? (semanticContext ? semanticContext : "（未命中高相关历史片段）");
+  const effectiveFactContext = {
+    factSummary: options?.contextOverrides?.factSummary ?? factContext.factSummary,
+    factHardConstraints: options?.contextOverrides?.factHardConstraints ?? factContext.factHardConstraints,
+    factSoftContext: options?.contextOverrides?.factSoftContext ?? factContext.factSoftContext,
+  };
+  const effectiveMaterialContext = {
+    materialSummary: options?.contextOverrides?.materialSummary ?? materialContext.materialSummary,
+    materialContext: options?.contextOverrides?.materialContext ?? materialContext.materialContext,
+  };
   const prompts = getTaskPrompts('drafting', {
     controls,
     bookTitle: book.title,
     bookPremise: book.premise,
     worldSetting: book.worldSetting,
     charactersJson: JSON.stringify(book.characters.map(c => ({ name: c.name, role: c.role, description: c.description }))),
-    hierarchyContext,
-    linearContext: linearContext ? linearContext : "（这是故事的开篇）",
-    semanticContext: semanticContext ? semanticContext : "（未命中高相关历史片段）",
+    hierarchyContext: effectiveHierarchyContext,
+    linearContext: effectiveLinearContext,
+    semanticContext: effectiveSemanticContext,
     nodeTitle: node.title,
     nodeSummary: node.summary,
     draftLengthHint: options?.draftLengthHint || '中篇幅（约 1000-2000 字）',
     creativeModeHint: options?.creativeModeHint || '平衡推进（剧情与文风并重）',
     antiBlockHint: options?.antiBlockHint || '若出现卡文风险，请优先推进行动线并抛出新问题',
-    factSummary: factContext.factSummary,
-    factHardConstraints: factContext.factHardConstraints,
-    factSoftContext: factContext.factSoftContext,
-    materialSummary: materialContext.materialSummary,
-    materialContext: materialContext.materialContext,
+    factSummary: effectiveFactContext.factSummary,
+    factHardConstraints: effectiveFactContext.factHardConstraints,
+    factSoftContext: effectiveFactContext.factSoftContext,
+    materialSummary: effectiveMaterialContext.materialSummary,
+    materialContext: effectiveMaterialContext.materialContext,
   }, options);
   const prompt = prompts.userPrompt;
-  const styleBiblePrompt = buildStyleBiblePrompt(book);
-  const draftingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`;
+  const styleBiblePrompt = options?.contextOverrides?.styleBiblePrompt ?? buildStyleBiblePrompt(book);
+  const draftingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${effectiveFactContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${effectiveMaterialContext.materialContext}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });
@@ -723,7 +755,7 @@ export const polishText = async (
   book: Book,
   onStream: (chunk: string) => void,
   signal?: AbortSignal,
-  options?: { promptProfileId?: string; polishRange?: 'selection' | 'scene' }
+  options?: { promptProfileId?: string; polishRange?: 'selection' | 'scene'; contextOverrides?: TaskContextOverrides }
 ): Promise<string> => {
   ensureNotAborted(signal);
   updateStatus("正在构思润色方案...");
@@ -731,6 +763,15 @@ export const polishText = async (
   const controls = getPromptControls('polishing', config);
   const factContext = await getFactContextForBook(book.id);
   const materialContext = await getMaterialContextForBook(book.id, `${selection}\n${context.slice(-500)}`);
+  const effectiveFactContext = {
+    factSummary: options?.contextOverrides?.factSummary ?? factContext.factSummary,
+    factHardConstraints: options?.contextOverrides?.factHardConstraints ?? factContext.factHardConstraints,
+    factSoftContext: options?.contextOverrides?.factSoftContext ?? factContext.factSoftContext,
+  };
+  const effectiveMaterialContext = {
+    materialSummary: options?.contextOverrides?.materialSummary ?? materialContext.materialSummary,
+    materialContext: options?.contextOverrides?.materialContext ?? materialContext.materialContext,
+  };
   const prompts = getTaskPrompts('polishing', {
     controls,
     bookTitle: book.title,
@@ -738,15 +779,15 @@ export const polishText = async (
     contextSnippet: context.slice(-500),
     selection,
     polishRangeHint: options?.polishRange === 'selection' ? '仅润色选中的文本片段' : '润色整段场景文本',
-    factSummary: factContext.factSummary,
-    factHardConstraints: factContext.factHardConstraints,
-    factSoftContext: factContext.factSoftContext,
-    materialSummary: materialContext.materialSummary,
-    materialContext: materialContext.materialContext,
+    factSummary: effectiveFactContext.factSummary,
+    factHardConstraints: effectiveFactContext.factHardConstraints,
+    factSoftContext: effectiveFactContext.factSoftContext,
+    materialSummary: effectiveMaterialContext.materialSummary,
+    materialContext: effectiveMaterialContext.materialContext,
   }, options);
   const prompt = prompts.userPrompt;
-  const styleBiblePrompt = buildStyleBiblePrompt(book);
-  const polishingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${factContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${materialContext.materialContext}`;
+  const styleBiblePrompt = options?.contextOverrides?.styleBiblePrompt ?? buildStyleBiblePrompt(book);
+  const polishingSystemPrompt = `${prompts.systemPrompt}\n\n[事实库硬约束]\n${effectiveFactContext.factHardConstraints}${styleBiblePrompt ? `\n\n${styleBiblePrompt}` : ''}\n\n[素材库参考]\n${effectiveMaterialContext.materialContext}`;
 
   if (config.provider === 'google') {
     const ai = new GoogleGenAI({ apiKey: config.apiKey });

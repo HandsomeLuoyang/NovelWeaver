@@ -11,6 +11,9 @@ import {
   FactCandidate,
   ForeshadowEntry,
   MaterialEntry,
+  SceneCharacterState,
+  BookCheckpoint,
+  ReferenceLink,
 } from '../types';
 
 interface ContentBackup {
@@ -25,6 +28,9 @@ interface ContentBackup {
   factCandidates: FactCandidate[];
   foreshadows: ForeshadowEntry[];
   materials: MaterialEntry[];
+  characterStates: SceneCharacterState[];
+  checkpoints: BookCheckpoint[];
+  references: ReferenceLink[];
 }
 
 export interface IntegrityReport {
@@ -85,6 +91,9 @@ const normalizeBackup = (payload: Partial<ContentBackup> | null | undefined): Co
     factCandidates: Array.isArray(safe.factCandidates) ? safe.factCandidates : [],
     foreshadows: Array.isArray(safe.foreshadows) ? safe.foreshadows : [],
     materials: Array.isArray(safe.materials) ? safe.materials : [],
+    characterStates: Array.isArray(safe.characterStates) ? safe.characterStates : [],
+    checkpoints: Array.isArray(safe.checkpoints) ? safe.checkpoints : [],
+    references: Array.isArray(safe.references) ? safe.references : [],
   };
 };
 
@@ -127,6 +136,21 @@ const validateBackup = (payload: Partial<ContentBackup> | null | undefined): Int
       issues.push(`素材 ${material.title.slice(0, 20)}... 的 bookId 不存在`);
     }
   });
+  normalized.characterStates.forEach((state) => {
+    if (!bookIds.has(state.bookId)) {
+      issues.push(`角色账本 ${state.characterName.slice(0, 20)}... 的 bookId 不存在`);
+    }
+  });
+  normalized.references.forEach((reference) => {
+    if (!bookIds.has(reference.bookId)) {
+      issues.push(`引用链接 ${reference.entityType}/${reference.entityId} 的 bookId 不存在`);
+    }
+  });
+  normalized.checkpoints.forEach((checkpoint) => {
+    if (!bookIds.has(checkpoint.bookId)) {
+      issues.push(`版本点 ${checkpoint.name.slice(0, 20)}... 的 bookId 不存在`);
+    }
+  });
 
   const nodeMap = new Map(normalized.nodes.map((node) => [node.id, node]));
   normalized.nodes.forEach((node) => {
@@ -159,6 +183,9 @@ const collectBackupPayload = async (): Promise<ContentBackup> => {
   const factCandidates = await db.factCandidates.toArray();
   const foreshadows = await db.foreshadows.toArray();
   const materials = await db.materials.toArray();
+  const characterStates = await db.characterStates.toArray();
+  const checkpoints = await db.checkpoints.toArray();
+  const references = await db.references.toArray();
 
   return {
     version: 1,
@@ -172,11 +199,14 @@ const collectBackupPayload = async (): Promise<ContentBackup> => {
     factCandidates,
     foreshadows,
     materials,
+    characterStates,
+    checkpoints,
+    references,
   };
 };
 
 const applyBackupPayload = async (payload: ContentBackup) => {
-  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes, db.facts, db.factCandidates, db.foreshadows, db.materials], async () => {
+  await db.transaction('rw', [db.books, db.nodes, db.history, db.snapshots, db.deletedBooks, db.deletedNodes, db.facts, db.factCandidates, db.foreshadows, db.materials, db.characterStates, db.checkpoints, db.references], async () => {
     await db.books.clear();
     await db.nodes.clear();
     await db.history.clear();
@@ -187,6 +217,9 @@ const applyBackupPayload = async (payload: ContentBackup) => {
     await db.factCandidates.clear();
     await db.foreshadows.clear();
     await db.materials.clear();
+    await db.characterStates.clear();
+    await db.checkpoints.clear();
+    await db.references.clear();
 
     if (payload.books.length > 0) {
       await db.books.bulkAdd(payload.books);
@@ -217,6 +250,15 @@ const applyBackupPayload = async (payload: ContentBackup) => {
     }
     if (payload.materials.length > 0) {
       await db.materials.bulkAdd(payload.materials);
+    }
+    if (payload.characterStates.length > 0) {
+      await db.characterStates.bulkAdd(payload.characterStates);
+    }
+    if (payload.checkpoints.length > 0) {
+      await db.checkpoints.bulkAdd(payload.checkpoints);
+    }
+    if (payload.references.length > 0) {
+      await db.references.bulkAdd(payload.references);
     }
   });
 };

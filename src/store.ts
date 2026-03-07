@@ -9,12 +9,15 @@ import {
   AITaskStatus,
   AITaskType,
   AITaskParams,
-  AITaskResult,
+  AIReviewItem,
   AIUsageEntry,
   EditorTypographySettings,
   PromptProfile,
   PromptProfileRevision,
   WritingGoal,
+  WorkspaceMode,
+  SceneTemplate,
+  ModelProbeLogEntry,
 } from './types';
 import type { Toast } from './hooks/useToast';
 import { DEFAULT_EDITOR_TYPOGRAPHY, sanitizeEditorTypography } from './services/typography';
@@ -37,6 +40,7 @@ interface AppState {
   isGenerating: boolean;
   generationStatus: string;
   isZenMode: boolean;
+  workspaceMode: WorkspaceMode;
 
   // Toast notifications
   toasts: Toast[];
@@ -52,6 +56,9 @@ interface AppState {
   activePromptProfileId: string;
   promptProfileRevisions: Record<string, PromptProfileRevision[]>;
   writingGoals: Record<string, WritingGoal>;
+  editorSidebarWidth: number;
+  sceneTemplates: SceneTemplate[];
+  modelProbeLog: ModelProbeLogEntry[];
 
   // Chat State (Ephemeral)
   chatHistory: Record<string, ChatMessage[]>; // bookId -> messages
@@ -62,7 +69,7 @@ interface AppState {
   isTaskQueueRunning: boolean;
   taskQueueConcurrency: number;
   usageLog: AIUsageEntry[];
-  taskResults: AITaskResult[];
+  reviewInbox: AIReviewItem[];
 
   // Actions
   setCurrentBook: (book: Book | null) => void;
@@ -71,6 +78,7 @@ interface AppState {
   setGenerating: (isGenerating: boolean) => void;
   setGenerationStatus: (status: string) => void;
   toggleZenMode: () => void;
+  setWorkspaceMode: (mode: WorkspaceMode) => void;
 
   // Chat Actions
   addChatMessage: (bookId: string, message: ChatMessage) => void;
@@ -84,9 +92,10 @@ interface AppState {
   setTaskQueuePaused: (paused: boolean) => void;
   setTaskQueueRunning: (running: boolean) => void;
   setTaskQueueConcurrency: (concurrency: number) => void;
-  addTaskResult: (result: AITaskResult) => void;
-  removeTaskResult: (resultId: string) => void;
-  clearTaskResults: () => void;
+  addReviewItem: (result: AIReviewItem) => void;
+  updateReviewItemStatus: (resultId: string, status: AIReviewItem['status']) => void;
+  removeReviewItem: (resultId: string) => void;
+  clearReviewInbox: () => void;
   addUsageEntry: (entry: AIUsageEntry) => void;
   clearUsageLog: () => void;
 
@@ -109,6 +118,11 @@ interface AppState {
   importPromptProfiles: (profiles: PromptProfile[], options?: { activateFirst?: boolean }) => string[];
   rollbackPromptProfile: (profileId: string, revisionId: string) => void;
   setWritingGoal: (bookId: string, patch: Partial<WritingGoal>) => void;
+  setEditorSidebarWidth: (width: number) => void;
+  upsertSceneTemplate: (template: SceneTemplate) => void;
+  removeSceneTemplate: (templateId: string) => void;
+  addModelProbeLogEntry: (entry: ModelProbeLogEntry) => void;
+  clearModelProbeLog: () => void;
   setTheme: (theme: ThemeMode) => void;
   setLightThemeVariant: (variant: LightThemeVariant) => void;
   setDarkThemeVariant: (variant: DarkThemeVariant) => void;
@@ -126,6 +140,10 @@ type PersistedState = Pick<
   | 'activePromptProfileId'
   | 'promptProfileRevisions'
   | 'writingGoals'
+  | 'workspaceMode'
+  | 'editorSidebarWidth'
+  | 'sceneTemplates'
+  | 'modelProbeLog'
 >;
 
 const MODEL_ASSIGNMENT_KEYS = [
@@ -155,6 +173,14 @@ const defaultConfig: ModelConfig = {
   draftingModelId: 'sample-gemini-flash',
   polishingModelId: 'sample-gemini-flash',
   chatModelId: 'sample-gemini-flash',
+  fallbackModelIds: {},
+  maxRetries: {
+    genesis: 1,
+    expansion: 1,
+    drafting: 1,
+    polishing: 1,
+    chat: 1,
+  },
   creativityLevel: {
     genesis: 0.9,
     expansion: 0.8,
@@ -173,15 +199,92 @@ const defaultConfig: ModelConfig = {
 
 const defaultPromptProfiles = normalizePromptProfiles([createDefaultPromptProfile()]);
 const defaultActivePromptProfileId = defaultPromptProfiles[0]?.id || 'prompt-default';
+const defaultSceneTemplates: SceneTemplate[] = [
+  {
+    id: 'builtin-suspense-scene',
+    name: '悬念场',
+    description: '快速建立未知信息、危险感和结尾钩子。',
+    builtin: true,
+    metaPreset: {
+      conflictType: '悬念',
+      tags: ['悬念', '推进'],
+      goal: '逼近真相',
+      obstacle: '信息不完整且存在危险',
+      turn: '发现比预期更坏的事实',
+      outcome: '抛出更大问题',
+    },
+    summaryPrompt: '该场景需制造悬念并留下下一步钩子。',
+    draftingPrompt: '让信息一点点露出，但不要一次说透，结尾必须留钩子。',
+    updatedAt: 0,
+  },
+  {
+    id: 'builtin-confrontation-scene',
+    name: '对峙场',
+    description: '强调双方目标冲突、筹码交换和关系变化。',
+    builtin: true,
+    metaPreset: {
+      conflictType: '对峙',
+      tags: ['冲突', '博弈'],
+      goal: '逼对方表态',
+      obstacle: '对方有底牌且不愿退让',
+      turn: '局势反转，主动权转移',
+      outcome: '关系或立场发生变化',
+    },
+    summaryPrompt: '该场景要把冲突摆到台面上，让关系发生明确变化。',
+    draftingPrompt: '通过对白和动作体现博弈，不要只靠解释。',
+    updatedAt: 0,
+  },
+  {
+    id: 'builtin-emotion-scene',
+    name: '情感推进场',
+    description: '推进人物关系、情绪波动和内在决策。',
+    builtin: true,
+    metaPreset: {
+      conflictType: '情感',
+      tags: ['关系', '情绪'],
+      goal: '确认关系或心意',
+      obstacle: '误解、顾虑或旧伤',
+      turn: '情绪被触发，防线松动',
+      outcome: '关系发生靠近或疏离',
+    },
+    summaryPrompt: '该场景的重点是让关系或情绪状态发生一小步但明确的变化。',
+    draftingPrompt: '用动作、停顿、潜台词表现情感，不要直接讲道理。',
+    updatedAt: 0,
+  },
+  {
+    id: 'builtin-reveal-scene',
+    name: '信息揭示场',
+    description: '投放关键信息，同时制造后续代价或误解。',
+    builtin: true,
+    metaPreset: {
+      conflictType: '揭示',
+      tags: ['信息', '反转'],
+      goal: '让角色得知关键事实',
+      obstacle: '信息来源不完整或不可信',
+      turn: '真相带出新的风险',
+      outcome: '角色做出新的选择',
+    },
+    summaryPrompt: '该场景要完成关键信息揭示，但不能让问题直接结束。',
+    draftingPrompt: '揭示信息后立刻引出代价、误解或新的冲突。',
+    updatedAt: 0,
+  },
+];
 
 const SETTINGS_ENDPOINT = '/api/storage/models';
 const TASK_QUEUE_STORAGE_KEY = 'novelweaver-task-queue';
 const AI_USAGE_STORAGE_KEY = 'novelweaver-ai-usage-log';
-const TASK_RESULTS_STORAGE_KEY = 'novelweaver-task-results';
+const REVIEW_INBOX_STORAGE_KEY = 'novelweaver-review-inbox';
 const MAX_PROMPT_REVISIONS = 20;
 
 const createId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
 const todayKey = () => new Date().toISOString().slice(0, 10);
+const resolveApiEndpoint = (path: string) => {
+  if (typeof window === 'undefined') return path;
+  const origin = window.location?.origin && window.location.origin !== 'null'
+    ? window.location.origin
+    : 'http://localhost';
+  return new URL(path, origin).toString();
+};
 
 const readFromLocalStorage = (name: string) => {
   if (typeof window === 'undefined') return null;
@@ -199,7 +302,7 @@ const readFromLocalStorage = (name: string) => {
 const settingsStorage: PersistStorage<PersistedState> = {
   getItem: async (name) => {
     try {
-      const response = await fetch(SETTINGS_ENDPOINT);
+      const response = await fetch(resolveApiEndpoint(SETTINGS_ENDPOINT));
       if (response.ok) {
         const data = await response.json();
         if (typeof window !== 'undefined') {
@@ -219,7 +322,7 @@ const settingsStorage: PersistStorage<PersistedState> = {
     }
 
     try {
-      await fetch(SETTINGS_ENDPOINT, {
+      await fetch(resolveApiEndpoint(SETTINGS_ENDPOINT), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(value),
@@ -310,26 +413,26 @@ const persistUsageLog = (usageLog: AIUsageEntry[]) => {
 
 const restoredUsageLog = readUsageLog();
 
-const readTaskResults = () => {
-  if (typeof window === 'undefined') return [] as AITaskResult[];
-  const raw = window.localStorage.getItem(TASK_RESULTS_STORAGE_KEY);
-  if (!raw) return [] as AITaskResult[];
+const readReviewInbox = () => {
+  if (typeof window === 'undefined') return [] as AIReviewItem[];
+  const raw = window.localStorage.getItem(REVIEW_INBOX_STORAGE_KEY);
+  if (!raw) return [] as AIReviewItem[];
 
   try {
-    const parsed = JSON.parse(raw) as AITaskResult[];
+    const parsed = JSON.parse(raw) as AIReviewItem[];
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
-    console.error('Failed to parse task results cache:', error);
-    return [] as AITaskResult[];
+    console.error('Failed to parse review inbox cache:', error);
+    return [] as AIReviewItem[];
   }
 };
 
-const persistTaskResults = (results: AITaskResult[]) => {
+const persistReviewInbox = (results: AIReviewItem[]) => {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(TASK_RESULTS_STORAGE_KEY, JSON.stringify(results.slice(0, 200)));
+  window.localStorage.setItem(REVIEW_INBOX_STORAGE_KEY, JSON.stringify(results.slice(0, 300)));
 };
 
-const restoredTaskResults = readTaskResults();
+const restoredReviewInbox = readReviewInbox();
 
 const normalizePromptRevisions = (
   revisions: Record<string, PromptProfileRevision[]> | undefined,
@@ -386,11 +489,36 @@ const resolveWritingGoals = (writingGoals: Record<string, WritingGoal> | undefin
   return next;
 };
 
+const resolveSceneTemplates = (sceneTemplates: SceneTemplate[] | undefined) => {
+  const seen = new Set<string>();
+  const merged = [...defaultSceneTemplates, ...(Array.isArray(sceneTemplates) ? sceneTemplates : [])];
+  return merged.filter((template) => {
+    if (!template?.id || !template.name || seen.has(template.id)) return false;
+    seen.add(template.id);
+    return true;
+  });
+};
+
+const resolveModelProbeLog = (entries: ModelProbeLogEntry[] | undefined) => {
+  if (!Array.isArray(entries)) return [] as ModelProbeLogEntry[];
+  return entries
+    .filter((entry) => entry?.id && entry.modelId && entry.modelName)
+    .slice(0, 200);
+};
+
 const resolveModelConfig = (modelConfig: ModelConfig | undefined) => {
   const incoming = modelConfig || defaultConfig;
   return {
     ...defaultConfig,
     ...incoming,
+    fallbackModelIds: {
+      ...defaultConfig.fallbackModelIds,
+      ...(incoming.fallbackModelIds || {}),
+    },
+    maxRetries: {
+      ...defaultConfig.maxRetries,
+      ...(incoming.maxRetries || {}),
+    },
     creativityLevel: {
       ...defaultConfig.creativityLevel,
       ...(incoming.creativityLevel || {}),
@@ -423,6 +551,13 @@ const resolveModelConfigWithModels = (
     }
   });
 
+  (Object.keys(nextConfig.fallbackModelIds) as Array<keyof ModelConfig['fallbackModelIds']>).forEach((key) => {
+    const fallbackId = nextConfig.fallbackModelIds[key];
+    if (fallbackId && !availableIds.has(fallbackId)) {
+      delete nextConfig.fallbackModelIds[key];
+    }
+  });
+
   return nextConfig;
 };
 
@@ -443,13 +578,14 @@ export const useStore = create<AppState>()(
       isGenerating: false,
       generationStatus: '',
       isZenMode: false,
+      workspaceMode: 'write',
       chatHistory: {},
       taskQueue: restoredTaskQueueState?.taskQueue || [],
       isTaskQueuePaused: restoredTaskQueueState?.isTaskQueuePaused || false,
       isTaskQueueRunning: false,
       taskQueueConcurrency: restoredTaskQueueState?.taskQueueConcurrency || 1,
       usageLog: restoredUsageLog,
-      taskResults: restoredTaskResults,
+      reviewInbox: restoredReviewInbox,
       toasts: [],
 
       models: initialModels,
@@ -459,6 +595,9 @@ export const useStore = create<AppState>()(
       activePromptProfileId: defaultActivePromptProfileId,
       promptProfileRevisions: {},
       writingGoals: {},
+      editorSidebarWidth: 320,
+      sceneTemplates: defaultSceneTemplates,
+      modelProbeLog: [],
       theme: 'system',
       lightThemeVariant: DEFAULT_LIGHT_THEME_VARIANT,
       darkThemeVariant: DEFAULT_DARK_THEME_VARIANT,
@@ -487,6 +626,7 @@ export const useStore = create<AppState>()(
       setGenerating: (val) => set({ isGenerating: val }),
       setGenerationStatus: (status) => set({ generationStatus: status }),
       toggleZenMode: () => set((state) => ({ isZenMode: !state.isZenMode })),
+      setWorkspaceMode: (workspaceMode) => set({ workspaceMode }),
 
       addChatMessage: (bookId, message) => set((state) => ({
         chatHistory: {
@@ -547,19 +687,28 @@ export const useStore = create<AppState>()(
         persistTaskQueueSnapshot(state.taskQueue, state.isTaskQueuePaused, safeConcurrency);
         return { taskQueueConcurrency: safeConcurrency };
       }),
-      addTaskResult: (result) => set((state) => {
-        const next = [result, ...state.taskResults];
-        persistTaskResults(next);
-        return { taskResults: next };
+      addReviewItem: (result) => set((state) => {
+        const next = [result, ...state.reviewInbox];
+        persistReviewInbox(next);
+        return { reviewInbox: next };
       }),
-      removeTaskResult: (resultId) => set((state) => {
-        const next = state.taskResults.filter((result) => result.id !== resultId);
-        persistTaskResults(next);
-        return { taskResults: next };
+      updateReviewItemStatus: (resultId, status) => set((state) => {
+        const next = state.reviewInbox.map((item) => (
+          item.id === resultId
+            ? { ...item, status, reviewedAt: Date.now() }
+            : item
+        ));
+        persistReviewInbox(next);
+        return { reviewInbox: next };
       }),
-      clearTaskResults: () => set(() => {
-        persistTaskResults([]);
-        return { taskResults: [] };
+      removeReviewItem: (resultId) => set((state) => {
+        const next = state.reviewInbox.filter((result) => result.id !== resultId);
+        persistReviewInbox(next);
+        return { reviewInbox: next };
+      }),
+      clearReviewInbox: () => set(() => {
+        persistReviewInbox([]);
+        return { reviewInbox: [] };
       }),
       addUsageEntry: (entry) => set((state) => {
         const nextLog = [entry, ...state.usageLog].slice(0, 500);
@@ -766,6 +915,25 @@ export const useStore = create<AppState>()(
           },
         };
       }),
+      setEditorSidebarWidth: (width) => set({
+        editorSidebarWidth: Math.min(520, Math.max(280, Math.round(width))),
+      }),
+      upsertSceneTemplate: (template) => set((state) => ({
+        sceneTemplates: resolveSceneTemplates([
+          ...state.sceneTemplates.filter((item) => item.id !== template.id),
+          {
+            ...template,
+            updatedAt: Date.now(),
+          },
+        ]),
+      })),
+      removeSceneTemplate: (templateId) => set((state) => ({
+        sceneTemplates: state.sceneTemplates.filter((template) => template.builtin || template.id !== templateId),
+      })),
+      addModelProbeLogEntry: (entry) => set((state) => ({
+        modelProbeLog: resolveModelProbeLog([entry, ...state.modelProbeLog]),
+      })),
+      clearModelProbeLog: () => set({ modelProbeLog: [] }),
       setTheme: (theme) => set({ theme }),
       setLightThemeVariant: (variant) => set({ lightThemeVariant: sanitizeLightThemeVariant(variant) }),
       setDarkThemeVariant: (variant) => set({ darkThemeVariant: sanitizeDarkThemeVariant(variant) }),
@@ -782,6 +950,9 @@ export const useStore = create<AppState>()(
         state.promptProfileRevisions = resolved.promptProfileRevisions;
         state.editorTypography = safeTypography;
         state.writingGoals = resolveWritingGoals(state.writingGoals);
+        state.sceneTemplates = resolveSceneTemplates(state.sceneTemplates);
+        state.modelProbeLog = resolveModelProbeLog(state.modelProbeLog);
+        state.editorSidebarWidth = Math.min(520, Math.max(280, Math.round(state.editorSidebarWidth || 320)));
         const resolvedModels = resolveModelState(state.models, state.modelConfig);
         state.models = resolvedModels.models;
         state.modelConfig = resolvedModels.modelConfig;
@@ -811,6 +982,10 @@ export const useStore = create<AppState>()(
           activePromptProfileId: resolved.activePromptProfileId,
           promptProfileRevisions: resolved.promptProfileRevisions,
           writingGoals: resolveWritingGoals(persisted.writingGoals),
+          workspaceMode: persisted.workspaceMode || currentState.workspaceMode,
+          editorSidebarWidth: Math.min(520, Math.max(280, Math.round(persisted.editorSidebarWidth || currentState.editorSidebarWidth))),
+          sceneTemplates: resolveSceneTemplates(persisted.sceneTemplates),
+          modelProbeLog: resolveModelProbeLog(persisted.modelProbeLog),
           lightThemeVariant: sanitizeLightThemeVariant(persisted.lightThemeVariant || currentState.lightThemeVariant),
           darkThemeVariant: sanitizeDarkThemeVariant(persisted.darkThemeVariant || currentState.darkThemeVariant),
         };
@@ -826,6 +1001,10 @@ export const useStore = create<AppState>()(
         activePromptProfileId: state.activePromptProfileId,
         promptProfileRevisions: state.promptProfileRevisions,
         writingGoals: state.writingGoals,
+        workspaceMode: state.workspaceMode,
+        editorSidebarWidth: state.editorSidebarWidth,
+        sceneTemplates: state.sceneTemplates,
+        modelProbeLog: state.modelProbeLog,
       }), // Only persist settings
     }
   )
