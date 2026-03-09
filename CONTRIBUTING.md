@@ -5,7 +5,8 @@ Thanks for contributing to NovelWeaver.
 ## Development setup
 
 ```bash
-npm install
+nvm use
+npm ci
 cp .env.example .env.local
 npm run dev
 ```
@@ -28,7 +29,8 @@ npm run dev
 Before opening a PR, run:
 
 ```bash
-npx tsc --noEmit
+npm run typecheck
+npm run test
 npm run build
 ```
 
