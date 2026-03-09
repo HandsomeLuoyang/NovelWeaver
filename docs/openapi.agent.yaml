@@ -1,0 +1,480 @@
+openapi: 3.1.0
+info:
+  title: Novel Weaver Agent API
+  version: 1.0.0
+  description: |
+    Agent-ready backend for 织梦机 AI. Prefer the Agent Gateway endpoints for external agents.
+servers:
+  - url: http://127.0.0.1:4173
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/agent/tools:
+    get:
+      summary: List tools visible to the current token
+      responses:
+        '200':
+          description: Tool definitions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentToolDefinition'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/agent/tools/{name}:
+    post:
+      summary: Invoke a single agent tool
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentToolInvokeRequest'
+      responses:
+        '200':
+          description: Tool result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/agent/runs:
+    get:
+      summary: List agent runs
+      responses:
+        '200':
+          description: Run list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentRun'
+    post:
+      summary: Create an agent run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                goal:
+                  type: string
+                caller:
+                  type: string
+                  enum: [openclaw, claude-code, ui, manual]
+      responses:
+        '201':
+          description: Run created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRun'
+  /api/v1/agent/runs/{runId}:
+    get:
+      summary: Get one agent run
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Run detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRun'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/agent/runs/{runId}/events:
+    get:
+      summary: Subscribe to agent run snapshots via SSE
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: text/event-stream with snapshot events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /api/v1/agent/tokens:
+    get:
+      summary: List agent tokens (requires models.admin)
+      responses:
+        '200':
+          description: Token list
+    post:
+      summary: Create an agent token (requires models.admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                scopes:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/AgentToolScope'
+      responses:
+        '201':
+          description: Token created
+  /api/v1/books:
+    get:
+      summary: List books
+      security: []
+      responses:
+        '200':
+          description: Books
+  /api/v1/books/{bookId}/tree:
+    get:
+      summary: Read book tree and related side data
+      security: []
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Book tree
+  /api/v1/books/{bookId}/snapshot:
+    get:
+      summary: Read full book snapshot
+      security: []
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Book snapshot
+  /api/v1/reviews:
+    get:
+      summary: List review items
+      security: []
+      parameters:
+        - in: query
+          name: bookId
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Review items
+  /api/v1/reviews/{reviewId}/{action}:
+    post:
+      summary: Apply or discard a review item
+      security: []
+      parameters:
+        - in: path
+          name: reviewId
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: action
+          required: true
+          schema:
+            type: string
+            enum: [apply, discard]
+      responses:
+        '200':
+          description: Review updated
+  /api/v1/checkpoints:
+    post:
+      summary: Create a checkpoint
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bookId:
+                  type: string
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Checkpoint created
+  /api/v1/exports:
+    post:
+      summary: Export a book
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bookId:
+                  type: string
+                format:
+                  type: string
+                  enum: [json, markdown, text, html, docx, epub]
+      responses:
+        '200':
+          description: Export result
+  /api/v1/models:
+    get:
+      summary: List models and config
+      security: []
+      responses:
+        '200':
+          description: Models
+  /api/v1/models/test:
+    post:
+      summary: Probe a model configuration
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Probe result
+  /api/v1/ai/tasks:
+    get:
+      summary: List AI tasks
+      security: []
+      responses:
+        '200':
+          description: AI tasks
+    post:
+      summary: Create an AI task
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiTaskCreateRequest'
+      responses:
+        '200':
+          description: Completed task when wait=true
+        '202':
+          description: Pending task when wait=false
+  /api/v1/ai/tasks/{taskId}:
+    get:
+      summary: Get one AI task
+      security: []
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: AI task detail
+  /api/v1/ai/tasks/{taskId}/events:
+    get:
+      summary: Subscribe to AI task snapshots via SSE
+      security: []
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: text/event-stream with snapshot events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Missing scope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        service:
+          type: string
+        storage:
+          type: string
+        tools:
+          type: integer
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+    AgentToolScope:
+      type: string
+      enum:
+        - project.read
+        - project.write.content
+        - project.write.structure
+        - project.write.metadata
+        - ai.run
+        - review.apply
+        - export.run
+        - ops.rollback
+        - models.read
+        - models.admin
+    AgentToolDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentToolScope'
+        sideEffect:
+          type: boolean
+        inputSchema:
+          type: object
+          additionalProperties: true
+        outputSchema:
+          type: object
+          additionalProperties: true
+    AgentToolInvokeRequest:
+      type: object
+      properties:
+        args:
+          type: object
+          additionalProperties: true
+        dryRun:
+          type: boolean
+        idempotencyKey:
+          type: string
+        sessionId:
+          type: string
+        checkpointPolicy:
+          type: string
+          enum: [auto, skip, force]
+        returnMode:
+          type: string
+          enum: [summary, full]
+    AgentRunStep:
+      type: object
+      properties:
+        id:
+          type: string
+        toolName:
+          type: string
+        status:
+          type: string
+          enum: [running, completed, failed]
+        summary:
+          type: string
+        startedAt:
+          type: integer
+        finishedAt:
+          type: integer
+        error:
+          type: string
+    AgentRun:
+      type: object
+      properties:
+        id:
+          type: string
+        goal:
+          type: string
+        caller:
+          type: string
+          enum: [openclaw, claude-code, ui, manual]
+        status:
+          type: string
+          enum: [running, completed, failed]
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentRunStep'
+        createdAt:
+          type: integer
+        updatedAt:
+          type: integer
+        error:
+          type: string
+    AiTaskCreateRequest:
+      type: object
+      properties:
+        taskType:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        wait:
+          type: boolean
