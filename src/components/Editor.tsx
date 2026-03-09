@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useStore } from '../store';
-import { db, getLinearContext, getAncestors, getHistory, getSemanticContext, getSceneCharacterStates, saveHistory, saveSceneCharacterStates } from '../db';
+import { db, getLinearContext, getAncestors, getHistory, getSemanticContext, getSceneCharacterStates, saveHistory, saveSceneCharacterStates, updateBookWordCount } from '../db';
 import { StoryNode, HistoryEntry, DraftGenerationSettings, SceneCharacterState, SceneTemplate } from '../types';
 import { Icons } from './Icons';
 import { useAIWriter } from '../hooks/useAIWriter';
@@ -348,7 +348,7 @@ export const Editor: React.FC = () => {
 
             // Update book word count
             if (currentBook) {
-                await import('../db').then(mod => mod.updateBookWordCount(currentBook.id));
+                await updateBookWordCount(currentBook.id);
             }
 
             const h = await getHistory(node.id);
@@ -665,7 +665,7 @@ export const Editor: React.FC = () => {
         await db.nodes.update(node.id, { content: finalContent, status: finalContent.length > 100 ? 'drafted' : 'outlined' });
         await saveHistory(node.id, finalContent, aiReview.mode === 'draft' ? 'ai-draft' : 'ai-polish');
         if (currentBook) {
-            await import('../db').then(mod => mod.updateBookWordCount(currentBook.id));
+            await updateBookWordCount(currentBook.id);
         }
 
         const h = await getHistory(node.id);
@@ -721,7 +721,7 @@ export const Editor: React.FC = () => {
         });
         await saveHistory(node.id, finalContent, 'ai-polish');
         if (currentBook) {
-            await import('../db').then((mod) => mod.updateBookWordCount(currentBook.id));
+            await updateBookWordCount(currentBook.id);
         }
         const h = await getHistory(node.id);
         setHistory(h);

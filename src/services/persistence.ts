@@ -64,6 +64,9 @@ const getBrowserStorage = () => {
   ) ? storage as Storage : null;
 };
 
+const shouldUsePersistenceApi = () => typeof window !== 'undefined' && !Boolean(import.meta.env.VITEST);
+const shouldLogPersistenceLifecycle = () => !Boolean(import.meta.env.VITEST);
+
 const readLocalBackup = (): ContentBackup | null => {
   const storage = getBrowserStorage();
   if (!storage) return null;
@@ -302,23 +305,27 @@ export const PersistenceService = {
     try {
       const bookCount = await db.books.count();
       if (!force && bookCount > 0) {
-        console.log('DB not empty, skipping load from disk.');
+        if (shouldLogPersistenceLifecycle()) {
+          console.log('DB not empty, skipping load from disk.');
+        }
         return;
       }
 
       let data: Partial<ContentBackup> | null = null;
 
-      try {
-        const res = await fetch(API_Endpoint);
-        if (res.ok) {
-          data = await res.json();
-          const storage = getBrowserStorage();
-          if (storage) {
-            storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+      if (shouldUsePersistenceApi()) {
+        try {
+          const res = await fetch(API_Endpoint);
+          if (res.ok) {
+            data = await res.json();
+            const storage = getBrowserStorage();
+            if (storage) {
+              storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+            }
           }
+        } catch (error) {
+          console.error('Failed to load content from API, trying local backup.', error);
         }
-      } catch (error) {
-        console.error('Failed to load content from API, trying local backup.', error);
       }
 
       if (!data) {
@@ -336,7 +343,9 @@ export const PersistenceService = {
       const normalized = normalizeBackup(data);
       await applyBackupPayload(normalized);
       await saveRecoverySnapshot(normalized, 'manual');
-      console.log('Content loaded from disk successfully.');
+      if (shouldLogPersistenceLifecycle()) {
+        console.log('Content loaded from disk successfully.');
+      }
     } catch (err) {
       console.error('Persistence load error:', err);
     }
@@ -351,14 +360,16 @@ export const PersistenceService = {
         storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
       }
 
-      try {
-        await fetch(API_Endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } catch (error) {
-        console.error('Failed to save content via API, local backup kept.', error);
+      if (shouldUsePersistenceApi()) {
+        try {
+          await fetch(API_Endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        } catch (error) {
+          console.error('Failed to save content via API, local backup kept.', error);
+        }
       }
 
       if (Date.now() - lastAutoRecoveryAt > AUTO_RECOVERY_INTERVAL) {
@@ -366,7 +377,9 @@ export const PersistenceService = {
         lastAutoRecoveryAt = Date.now();
       }
 
-      console.log('Content saved to disk.');
+      if (shouldLogPersistenceLifecycle()) {
+        console.log('Content saved to disk.');
+      }
     } catch (err) {
       console.error('Persistence save error:', err);
     }

@@ -280,8 +280,10 @@ const runBackendTask = async (
 const EMPTY_FACT_CONTEXT = buildFactPromptContext([]);
 const EMPTY_MATERIAL_CONTEXT = buildMaterialPromptContext([], '');
 
+const shouldUseIndexedDbContext = () => typeof indexedDB !== 'undefined' && !Boolean(import.meta.env.VITEST);
+
 const getFactContextForBook = async (bookId?: string) => {
-  if (!bookId) return EMPTY_FACT_CONTEXT;
+  if (!bookId || !shouldUseIndexedDbContext()) return EMPTY_FACT_CONTEXT;
   try {
     const facts = await db.facts.where('bookId').equals(bookId).toArray();
     return buildFactPromptContext(facts);
@@ -292,7 +294,7 @@ const getFactContextForBook = async (bookId?: string) => {
 };
 
 const getMaterialContextForBook = async (bookId: string | undefined, query: string) => {
-  if (!bookId) return EMPTY_MATERIAL_CONTEXT;
+  if (!bookId || !shouldUseIndexedDbContext()) return EMPTY_MATERIAL_CONTEXT;
   try {
     const materials = await db.materials.where('bookId').equals(bookId).toArray();
     return buildMaterialPromptContext(materials, query, 5);

@@ -286,6 +286,9 @@ const resolveApiEndpoint = (path: string) => {
   return new URL(path, origin).toString();
 };
 
+const shouldUseSettingsApi = () => typeof window !== 'undefined' && !Boolean(import.meta.env.VITEST);
+const shouldLogSettingsLifecycle = () => !Boolean(import.meta.env.VITEST);
+
 const getBrowserStorage = () => {
   if (typeof window === 'undefined') return null;
   const storage = window.localStorage as Partial<Storage> | undefined;
@@ -313,6 +316,10 @@ const readFromLocalStorage = (name: string) => {
 
 const settingsStorage: PersistStorage<PersistedState> = {
   getItem: async (name) => {
+    if (!shouldUseSettingsApi()) {
+      return readFromLocalStorage(name);
+    }
+
     try {
       const response = await fetch(resolveApiEndpoint(SETTINGS_ENDPOINT));
       if (response.ok) {
@@ -333,6 +340,10 @@ const settingsStorage: PersistStorage<PersistedState> = {
     const storage = getBrowserStorage();
     if (storage) {
       storage.setItem(name, JSON.stringify(value));
+    }
+
+    if (!shouldUseSettingsApi()) {
+      return;
     }
 
     try {
@@ -979,7 +990,9 @@ export const useStore = create<AppState>()(
         state.modelConfig = resolvedModels.modelConfig;
         state.lightThemeVariant = sanitizeLightThemeVariant(state.lightThemeVariant);
         state.darkThemeVariant = sanitizeDarkThemeVariant(state.darkThemeVariant);
-        console.log('Settings rehydrated from local file');
+        if (shouldLogSettingsLifecycle()) {
+          console.log('Settings rehydrated from local file');
+        }
       },
       merge: (persistedState, currentState) => {
         const persisted = (persistedState || {}) as Partial<PersistedState>;

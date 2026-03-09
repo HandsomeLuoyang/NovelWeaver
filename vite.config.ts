@@ -72,6 +72,22 @@ export default defineConfig(({ mode }) => {
         },
       } : {}),
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/react') || id.includes('node_modules/scheduler')) return 'react-vendor';
+            if (id.includes('node_modules/dexie')) return 'data-vendor';
+            if (id.includes('node_modules/zustand') || id.includes('node_modules/zod') || id.includes('node_modules/uuid')) return 'state-vendor';
+            if (id.includes('node_modules/react-markdown') || id.includes('node_modules/remark-gfm')) return 'markdown-vendor';
+            if (id.includes('node_modules/@google/genai') || id.includes('node_modules/diff')) return 'ai-vendor';
+            if (id.includes('node_modules/docx') || id.includes('node_modules/fflate')) return 'export-vendor';
+            if (id.includes('node_modules/framer-motion') || id.includes('node_modules/lucide-react')) return 'ui-vendor';
+            return undefined;
+          },
+        },
+      },
+    },
     plugins: [
       react(),
       ...(!proxyTarget ? [{
