@@ -250,6 +250,33 @@ const updateStatus = (status: string) => {
   useStore.getState().setGenerationStatus(status);
 };
 
+const shouldUseBackendAI = () => typeof window !== 'undefined' && !Boolean(import.meta.env.VITEST);
+
+const runBackendTask = async (
+  taskType: string,
+  input: Record<string, unknown>,
+  signal?: AbortSignal
+) => {
+  const response = await fetch('/api/v1/ai/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      taskType,
+      input,
+      wait: true,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const raw = await response.text();
+    throw new Error(raw || `Backend task failed: ${response.status}`);
+  }
+
+  const payload = await response.json() as { result?: unknown };
+  return payload.result ?? payload;
+};
+
 const EMPTY_FACT_CONTEXT = buildFactPromptContext([]);
 const EMPTY_MATERIAL_CONTEXT = buildMaterialPromptContext([], '');
 
@@ -454,6 +481,23 @@ async function* callOpenAIStream(
  */
 export const genesis = async (userPrompt: string, signal?: AbortSignal): Promise<GenesisResponse> => {
   ensureNotAborted(signal);
+  if (shouldUseBackendAI()) {
+    try {
+      updateStatus('正在请求后端创世引擎...');
+      const result = await runBackendTask('genesis', { userPrompt }, signal) as { kind?: string } & GenesisResponse;
+      if (result && result.kind === 'genesis') {
+        return {
+          title: result.title,
+          premise: result.premise,
+          worldSetting: result.worldSetting,
+          characters: result.characters,
+          initialVolumes: result.initialVolumes,
+        };
+      }
+    } catch (error) {
+      console.warn('Backend genesis unavailable, fallback to direct provider.', error);
+    }
+  }
   updateStatus("正在连接创世引擎...");
   const config = getConfigForTask('genesis');
   const controls = getPromptControls('genesis', config);
@@ -551,6 +595,23 @@ export const expandNode = async (
   options?: { promptProfileId?: string; contextOverrides?: TaskContextOverrides }
 ): Promise<ExpansionResponse> => {
   ensureNotAborted(signal);
+  if (shouldUseBackendAI()) {
+    try {
+      updateStatus(`正在请求后端扩写服务：${parentNode.title}`);
+      const result = await runBackendTask('expansion', {
+        bookId: book.id,
+        nodeId: parentNode.id,
+        childType,
+        promptProfileId: options?.promptProfileId,
+        contextOverrides: options?.contextOverrides,
+      }, signal) as { kind?: string; nodes?: Array<{ title: string; summary: string }> };
+      if (result?.kind === 'expansion' && Array.isArray(result.nodes)) {
+        return { nodes: result.nodes };
+      }
+    } catch (error) {
+      console.warn('Backend expansion unavailable, fallback to direct provider.', error);
+    }
+  }
   updateStatus(`正在分析节点: ${parentNode.title}...`);
   const config = getConfigForTask('expansion');
   const controls = getPromptControls('expansion', config);
@@ -657,6 +718,28 @@ export const draftScene = async (
   options?: { promptProfileId?: string; draftLengthHint?: string; creativeModeHint?: string; antiBlockHint?: string; contextOverrides?: TaskContextOverrides }
 ): Promise<string> => {
   ensureNotAborted(signal);
+  if (shouldUseBackendAI()) {
+    try {
+      updateStatus('正在请求后端起草服务...');
+      const result = await runBackendTask('drafting', {
+        bookId: book.id,
+        nodeId: node.id,
+        promptProfileId: options?.promptProfileId,
+        draftLengthHint: options?.draftLengthHint,
+        creativeModeHint: options?.creativeModeHint,
+        antiBlockHint: options?.antiBlockHint,
+        contextOverrides: options?.contextOverrides,
+      }, signal) as { kind?: string; content?: string };
+      if (result?.kind === 'text') {
+        const content = String(result.content || '');
+        if (content) onStream(content);
+        updateStatus('写作完成');
+        return content;
+      }
+    } catch (error) {
+      console.warn('Backend drafting unavailable, fallback to direct provider.', error);
+    }
+  }
   updateStatus("正在读取全书大纲与前文记忆...");
   const config = getConfigForTask('drafting');
   const controls = getPromptControls('drafting', config);
@@ -755,9 +838,31 @@ export const polishText = async (
   book: Book,
   onStream: (chunk: string) => void,
   signal?: AbortSignal,
-  options?: { promptProfileId?: string; polishRange?: 'selection' | 'scene'; contextOverrides?: TaskContextOverrides }
+  options?: { nodeId?: string; promptProfileId?: string; polishRange?: 'selection' | 'scene'; contextOverrides?: TaskContextOverrides }
 ): Promise<string> => {
   ensureNotAborted(signal);
+  if (shouldUseBackendAI()) {
+    try {
+      updateStatus('正在请求后端润色服务...');
+      const result = await runBackendTask('polishing', {
+        bookId: book.id,
+        nodeId: options?.nodeId || useStore.getState().activeNodeId,
+        selection,
+        context,
+        promptProfileId: options?.promptProfileId,
+        polishRange: options?.polishRange,
+        contextOverrides: options?.contextOverrides,
+      }, signal) as { kind?: string; content?: string };
+      if (result?.kind === 'text') {
+        const content = String(result.content || '');
+        if (content) onStream(content);
+        updateStatus('润色完成');
+        return content;
+      }
+    } catch (error) {
+      console.warn('Backend polishing unavailable, fallback to direct provider.', error);
+    }
+  }
   updateStatus("正在构思润色方案...");
   const config = getConfigForTask('polishing');
   const controls = getPromptControls('polishing', config);
@@ -843,6 +948,23 @@ export const generateRewriteVariants = async (
   options?: { promptProfileId?: string; variantCount?: number }
 ): Promise<string[]> => {
   ensureNotAborted(signal);
+  if (shouldUseBackendAI()) {
+    try {
+      const result = await runBackendTask('rewrite', {
+        bookId: book.id,
+        selection,
+        preContext,
+        postContext,
+        variantCount: options?.variantCount,
+        promptProfileId: options?.promptProfileId,
+      }, signal) as { kind?: string; variants?: string[] };
+      if (result?.kind === 'rewrite' && Array.isArray(result.variants)) {
+        return result.variants;
+      }
+    } catch (error) {
+      console.warn('Backend rewrite unavailable, fallback to direct provider.', error);
+    }
+  }
   const config = getConfigForTask('polishing');
   const controls = getPromptControls('polishing', config);
   const factContext = await getFactContextForBook(book.id);
@@ -935,6 +1057,24 @@ export const chat = async (
   options?: { promptProfileId?: string }
 ): Promise<string> => {
   ensureNotAborted(signal);
+  if (shouldUseBackendAI()) {
+    try {
+      const currentBook = useStore.getState().currentBook;
+      const result = await runBackendTask('chat', {
+        bookId: currentBook?.id,
+        history,
+        context,
+        promptProfileId: options?.promptProfileId,
+      }, signal) as { kind?: string; content?: string };
+      if (result?.kind === 'text') {
+        const content = String(result.content || '');
+        if (content) onStream(content);
+        return content;
+      }
+    } catch (error) {
+      console.warn('Backend chat unavailable, fallback to direct provider.', error);
+    }
+  }
   // Use chat model for chat as it usually requires decent reasoning
   const config = getConfigForTask('chat');
   const controls = getPromptControls('chat', config);
@@ -1018,6 +1158,27 @@ export const generateInspirationPack = async (
   signal?: AbortSignal
 ): Promise<InspirationPack> => {
   ensureNotAborted(signal);
+  if (shouldUseBackendAI()) {
+    try {
+      const result = await runBackendTask('creative_rescue', {
+        bookId: book.id,
+        nodeId: node.id,
+      }, signal) as { kind?: string } & InspirationPack;
+      if (result?.kind === 'creative_rescue') {
+        return {
+          direction: result.direction,
+          nextBeats: result.nextBeats,
+          conflictEscalations: result.conflictEscalations,
+          twists: result.twists,
+          dialogueHooks: result.dialogueHooks,
+          sensoryAnchors: result.sensoryAnchors,
+          cliffhangers: result.cliffhangers,
+        };
+      }
+    } catch (error) {
+      console.warn('Backend creative rescue unavailable, fallback to direct provider.', error);
+    }
+  }
   updateStatus('正在生成卡文急救灵感包...');
   const config = getConfigForTask('chat');
   const controls = getPromptControls('chat', config);

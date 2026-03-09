@@ -14,6 +14,15 @@ import { NodeRecycleBinModal } from './NodeRecycleBinModal';
 import { SceneBoardModal } from './SceneBoardModal';
 
 const NODE_ACTION_STYLE_STORAGE_KEY = 'zmj.outliner.nodeActionStyle';
+const getBrowserStorage = () => {
+    if (typeof window === 'undefined') return null;
+    const storage = window.localStorage as Partial<Storage> | undefined;
+    if (!storage) return null;
+    return (
+        typeof storage.getItem === 'function'
+        && typeof storage.setItem === 'function'
+    ) ? storage as Storage : null;
+};
 
 // Recursive Node Component
 interface NodeItemProps {
@@ -458,9 +467,10 @@ export const Outliner: React.FC = () => {
     const [showRootCreateModal, setShowRootCreateModal] = useState(false);
     const [generatingNodeIds, setGeneratingNodeIds] = useState<string[]>([]);
     const [nodeActionStyle, setNodeActionStyle] = useState<'label' | 'icon'>(() => {
-        if (typeof window === 'undefined') return 'label';
+        const storage = getBrowserStorage();
+        if (!storage) return 'label';
         try {
-            const stored = window.localStorage.getItem(NODE_ACTION_STYLE_STORAGE_KEY);
+            const stored = storage.getItem(NODE_ACTION_STYLE_STORAGE_KEY);
             return stored === 'icon' ? 'icon' : 'label';
         } catch {
             return 'label';
@@ -501,7 +511,7 @@ export const Outliner: React.FC = () => {
 
     useEffect(() => {
         try {
-            window.localStorage.setItem(NODE_ACTION_STYLE_STORAGE_KEY, nodeActionStyle);
+            getBrowserStorage()?.setItem(NODE_ACTION_STYLE_STORAGE_KEY, nodeActionStyle);
         } catch {
             // Ignore persistence failure in restricted environments.
         }

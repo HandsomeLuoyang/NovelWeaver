@@ -109,6 +109,21 @@ const probeGoogle = async (modelName: string, apiKey: string) => {
 };
 
 export const testModelAvailability = async (model: AIModel): Promise<ModelProbeResult> => {
+  if (typeof window !== 'undefined' && !Boolean(import.meta.env.VITEST)) {
+    try {
+      const response = await fetch('/api/v1/models/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (response.ok) {
+        return await response.json() as ModelProbeResult;
+      }
+    } catch (error) {
+      console.warn('Backend model probe unavailable, fallback to direct probe.', error);
+    }
+  }
+
   const modelName = model.modelName?.trim();
   if (!modelName) {
     throw new Error('Model Name 不能为空。');

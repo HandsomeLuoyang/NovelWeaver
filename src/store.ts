@@ -286,9 +286,21 @@ const resolveApiEndpoint = (path: string) => {
   return new URL(path, origin).toString();
 };
 
-const readFromLocalStorage = (name: string) => {
+const getBrowserStorage = () => {
   if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(name);
+  const storage = window.localStorage as Partial<Storage> | undefined;
+  if (!storage) return null;
+  return (
+    typeof storage.getItem === 'function'
+    && typeof storage.setItem === 'function'
+    && typeof storage.removeItem === 'function'
+  ) ? storage as Storage : null;
+};
+
+const readFromLocalStorage = (name: string) => {
+  const storage = getBrowserStorage();
+  if (!storage) return null;
+  const raw = storage.getItem(name);
   if (!raw) return null;
 
   try {
@@ -305,8 +317,9 @@ const settingsStorage: PersistStorage<PersistedState> = {
       const response = await fetch(resolveApiEndpoint(SETTINGS_ENDPOINT));
       if (response.ok) {
         const data = await response.json();
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(name, JSON.stringify(data));
+        const storage = getBrowserStorage();
+        if (storage) {
+          storage.setItem(name, JSON.stringify(data));
         }
         return data;
       }
@@ -317,8 +330,9 @@ const settingsStorage: PersistStorage<PersistedState> = {
     return readFromLocalStorage(name);
   },
   setItem: async (name, value) => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(name, JSON.stringify(value));
+    const storage = getBrowserStorage();
+    if (storage) {
+      storage.setItem(name, JSON.stringify(value));
     }
 
     try {
@@ -332,16 +346,18 @@ const settingsStorage: PersistStorage<PersistedState> = {
     }
   },
   removeItem: async (name) => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(name);
+    const storage = getBrowserStorage();
+    if (storage) {
+      storage.removeItem(name);
     }
   },
 };
 
 const readTaskQueueSnapshot = () => {
-  if (typeof window === 'undefined') return null;
+  const storage = getBrowserStorage();
+  if (!storage) return null;
 
-  const raw = window.localStorage.getItem(TASK_QUEUE_STORAGE_KEY);
+  const raw = storage.getItem(TASK_QUEUE_STORAGE_KEY);
   if (!raw) return null;
 
   try {
@@ -374,7 +390,8 @@ const persistTaskQueueSnapshot = (
   isTaskQueuePaused: boolean,
   taskQueueConcurrency: number
 ) => {
-  if (typeof window === 'undefined') return;
+  const storage = getBrowserStorage();
+  if (!storage) return;
 
   const normalizedQueue = taskQueue.map((task) => ({
     ...task,
@@ -386,15 +403,16 @@ const persistTaskQueueSnapshot = (
     taskQueueConcurrency
   };
 
-  window.localStorage.setItem(TASK_QUEUE_STORAGE_KEY, JSON.stringify(payload));
+  storage.setItem(TASK_QUEUE_STORAGE_KEY, JSON.stringify(payload));
 };
 
 const restoredTaskQueueState = readTaskQueueSnapshot();
 
 const readUsageLog = () => {
-  if (typeof window === 'undefined') return [] as AIUsageEntry[];
+  const storage = getBrowserStorage();
+  if (!storage) return [] as AIUsageEntry[];
 
-  const raw = window.localStorage.getItem(AI_USAGE_STORAGE_KEY);
+  const raw = storage.getItem(AI_USAGE_STORAGE_KEY);
   if (!raw) return [] as AIUsageEntry[];
 
   try {
@@ -407,15 +425,17 @@ const readUsageLog = () => {
 };
 
 const persistUsageLog = (usageLog: AIUsageEntry[]) => {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(AI_USAGE_STORAGE_KEY, JSON.stringify(usageLog.slice(0, 500)));
+  const storage = getBrowserStorage();
+  if (!storage) return;
+  storage.setItem(AI_USAGE_STORAGE_KEY, JSON.stringify(usageLog.slice(0, 500)));
 };
 
 const restoredUsageLog = readUsageLog();
 
 const readReviewInbox = () => {
-  if (typeof window === 'undefined') return [] as AIReviewItem[];
-  const raw = window.localStorage.getItem(REVIEW_INBOX_STORAGE_KEY);
+  const storage = getBrowserStorage();
+  if (!storage) return [] as AIReviewItem[];
+  const raw = storage.getItem(REVIEW_INBOX_STORAGE_KEY);
   if (!raw) return [] as AIReviewItem[];
 
   try {
@@ -428,8 +448,9 @@ const readReviewInbox = () => {
 };
 
 const persistReviewInbox = (results: AIReviewItem[]) => {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(REVIEW_INBOX_STORAGE_KEY, JSON.stringify(results.slice(0, 300)));
+  const storage = getBrowserStorage();
+  if (!storage) return;
+  storage.setItem(REVIEW_INBOX_STORAGE_KEY, JSON.stringify(results.slice(0, 300)));
 };
 
 const restoredReviewInbox = readReviewInbox();

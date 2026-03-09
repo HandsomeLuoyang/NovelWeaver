@@ -151,6 +151,7 @@ const executeTask = async (task: AITask): Promise<ExecutedTaskResult> => {
     },
       undefined,
       {
+        nodeId: node.id,
         promptProfileId: task.params?.promptProfileId,
         polishRange,
         contextOverrides: {

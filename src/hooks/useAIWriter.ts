@@ -133,7 +133,7 @@ const handleAIDraft = useCallback(async (
                     rawPolishResponse += chunk;
                 },
                 abortControllerRef.current.signal,
-                { contextOverrides: options?.contextOverrides }
+                { nodeId, contextOverrides: options?.contextOverrides }
             );
 
             const polishedSegment = extractPolishedSegment(rawPolishResponse);

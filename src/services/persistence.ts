@@ -53,9 +53,21 @@ const AUTO_RECOVERY_INTERVAL = 5 * 60 * 1000;
 
 let lastAutoRecoveryAt = 0;
 
-const readLocalBackup = (): ContentBackup | null => {
+const getBrowserStorage = () => {
   if (typeof window === 'undefined') return null;
-  const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+  const storage = window.localStorage as Partial<Storage> | undefined;
+  if (!storage) return null;
+  return (
+    typeof storage.getItem === 'function'
+    && typeof storage.setItem === 'function'
+    && typeof storage.removeItem === 'function'
+  ) ? storage as Storage : null;
+};
+
+const readLocalBackup = (): ContentBackup | null => {
+  const storage = getBrowserStorage();
+  if (!storage) return null;
+  const raw = storage.getItem(LOCAL_STORAGE_KEY);
   if (!raw) return null;
 
   try {
@@ -300,8 +312,9 @@ export const PersistenceService = {
         const res = await fetch(API_Endpoint);
         if (res.ok) {
           data = await res.json();
-          if (typeof window !== 'undefined') {
-            window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+          const storage = getBrowserStorage();
+          if (storage) {
+            storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
           }
         }
       } catch (error) {
@@ -333,8 +346,9 @@ export const PersistenceService = {
     try {
       const payload = await collectBackupPayload();
 
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
+      const storage = getBrowserStorage();
+      if (storage) {
+        storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
       }
 
       try {
@@ -387,8 +401,9 @@ export const PersistenceService = {
 
       const normalized = normalizeBackup(payload);
       await applyBackupPayload(normalized);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
+      const storage = getBrowserStorage();
+      if (storage) {
+        storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(normalized));
       }
       return { ok: true, issues: [] };
     } catch (error) {
