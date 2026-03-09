@@ -58,14 +58,23 @@ const createStorageMiddleware = () => {
 };
 
 export default defineConfig(({ mode }) => {
+  const proxyTarget = process.env.API_PROXY_TARGET?.trim();
   return {
     server: {
       port: 3000,
       host: '0.0.0.0',
+      ...(proxyTarget ? {
+        proxy: {
+          '/api': {
+            target: proxyTarget,
+            changeOrigin: true,
+          },
+        },
+      } : {}),
     },
     plugins: [
       react(),
-      {
+      ...(!proxyTarget ? [{
         name: 'api-middleware',
         configureServer(server) {
           server.middlewares.use(createStorageMiddleware());
@@ -73,7 +82,7 @@ export default defineConfig(({ mode }) => {
         configurePreviewServer(server) {
           server.middlewares.use(createStorageMiddleware());
         },
-      },
+      }] : []),
     ],
     resolve: {
       alias: {

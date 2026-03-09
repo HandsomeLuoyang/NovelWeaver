@@ -1,4 +1,4 @@
-import { StoryNode } from '../types';
+import type { StoryNode } from '../types.ts';
 
 export interface PacingFinding {
   id: string;

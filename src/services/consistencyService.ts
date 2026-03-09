@@ -1,5 +1,5 @@
-import { Book, ConsistencyFindingCategory, FactEntry, NodeType, SceneCharacterState, StoryNode } from '../types';
-import { detectLockedFactConflicts } from './factLibrary';
+import type { Book, ConsistencyFindingCategory, FactEntry, NodeType, SceneCharacterState, StoryNode } from '../types.ts';
+import { detectLockedFactConflicts } from './factLibrary.ts';
 
 export type FindingSeverity = 'high' | 'medium' | 'low';
 

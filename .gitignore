@@ -7,3 +7,6 @@ dist
 *.log
 data/local/
 data/*.json
+data/local/*.sqlite
+data/local/*.sqlite-*
+data/local/agent-bootstrap-token.txt

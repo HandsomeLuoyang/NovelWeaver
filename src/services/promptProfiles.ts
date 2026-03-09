@@ -1,4 +1,4 @@
-import { PromptProfile, PromptTaskType } from '../types';
+import type { PromptProfile, PromptTaskType } from '../types.ts';
 
 export const PROMPT_TASKS: PromptTaskType[] = ['genesis', 'expansion', 'drafting', 'polishing', 'chat'];
 

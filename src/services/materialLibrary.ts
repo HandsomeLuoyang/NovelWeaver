@@ -1,4 +1,4 @@
-import { MaterialEntry, MaterialType } from '../types';
+import type { MaterialEntry, MaterialType } from '../types.ts';
 
 export const MATERIAL_TYPE_LABEL: Record<MaterialType, string> = {
   snippet: '片段',

@@ -1,4 +1,4 @@
-import { FactCandidate, FactCategory, FactEntry, StoryNode } from '../types';
+import type { FactCandidate, FactCategory, FactEntry, StoryNode } from '../types.ts';
 
 export const FACT_CATEGORY_LABEL: Record<FactCategory, string> = {
   world: '世界',

@@ -1,5 +1,5 @@
-import { Book, FactEntry, ForeshadowEntry, StoryNode } from '../types';
-import { runConsistencyCheck } from './consistencyService';
+import type { Book, FactEntry, ForeshadowEntry, StoryNode } from '../types.ts';
+import { runConsistencyCheck } from './consistencyService.ts';
 
 export interface PublishBlocker {
   id: string;

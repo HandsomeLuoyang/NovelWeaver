@@ -5,9 +5,11 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "dev:api": "node server/index.ts",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "node server/index.ts",
     "test": "vitest --run",
     "test:watch": "vitest"
   },
