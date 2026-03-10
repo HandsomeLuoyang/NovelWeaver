@@ -104,6 +104,12 @@ const requireAgentAuth = (req: IncomingMessage, res: ServerResponse) => {
   };
 };
 
+const getUiActor = () => ({
+  actorType: 'ui' as const,
+  actorId: 'ui',
+  scopes: Array.from(new Set(TOOL_DEFINITIONS.flatMap((tool) => tool.scopes))),
+});
+
 const sendSse = (res: ServerResponse, event: string, payload: unknown) => {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -266,6 +272,22 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (pathname === '/api/v1/books' && req.method === 'POST') {
+      const body = await readBody(req);
+      const result = await invokeTool('write.create_book', { args: body, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 201, result);
+      return;
+    }
+
+    const bookUpdateMatch = pathname.match(/^\/api\/v1\/books\/([^/]+)$/);
+    if (bookUpdateMatch && req.method === 'PATCH') {
+      const body = await readBody(req);
+      const bookId = decodeURIComponent(bookUpdateMatch[1]);
+      const result = await invokeTool('write.update_book', { args: { bookId, bookPatch: body }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
     const bookTreeMatch = pathname.match(/^\/api\/v1\/books\/([^/]+)\/tree$/);
     if (bookTreeMatch && req.method === 'GET') {
       const bookId = decodeURIComponent(bookTreeMatch[1]);
@@ -308,6 +330,108 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    const bookCheckpointMatch = pathname.match(/^\/api\/v1\/books\/([^/]+)\/checkpoints$/);
+    if (bookCheckpointMatch && req.method === 'GET') {
+      const bookId = decodeURIComponent(bookCheckpointMatch[1]);
+      const result = await invokeTool('read.checkpoints', { args: { bookId } }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    const deletedNodesMatch = pathname.match(/^\/api\/v1\/books\/([^/]+)\/deleted-nodes$/);
+    if (deletedNodesMatch && req.method === 'GET') {
+      const bookId = decodeURIComponent(deletedNodesMatch[1]);
+      const result = await invokeTool('read.deleted_nodes', { args: { bookId } }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (pathname === '/api/v1/nodes/search' && req.method === 'GET') {
+      const result = await invokeTool('read.search_nodes', {
+        args: {
+          query: searchParams.get('query') || searchParams.get('q') || '',
+          bookId: searchParams.get('bookId') || undefined,
+          limit: searchParams.get('limit') || undefined,
+          type: searchParams.get('type') || undefined,
+        },
+      }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    const nodeHistoryMatch = pathname.match(/^\/api\/v1\/nodes\/([^/]+)\/history$/);
+    if (nodeHistoryMatch && req.method === 'GET') {
+      const nodeId = decodeURIComponent(nodeHistoryMatch[1]);
+      const result = await invokeTool('read.node_history', {
+        args: { nodeId, limit: searchParams.get('limit') || undefined },
+      }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    const nodeMoveMatch = pathname.match(/^\/api\/v1\/nodes\/([^/]+)\/move$/);
+    if (nodeMoveMatch && req.method === 'POST') {
+      const nodeId = decodeURIComponent(nodeMoveMatch[1]);
+      const body = await readBody(req);
+      const result = await invokeTool('write.move_node', {
+        args: { nodeId, newParentId: body.newParentId ?? null, newOrder: body.newOrder },
+        returnMode: 'full',
+      }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    const nodeDeleteMatch = pathname.match(/^\/api\/v1\/nodes\/([^/]+)$/);
+    if (nodeDeleteMatch && req.method === 'DELETE') {
+      const nodeId = decodeURIComponent(nodeDeleteMatch[1]);
+      const result = await invokeTool('write.delete_node', { args: { nodeId }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    const restoreDeletedNodeMatch = pathname.match(/^\/api\/v1\/deleted-nodes\/([^/]+)\/restore$/);
+    if (restoreDeletedNodeMatch && req.method === 'POST') {
+      const entryId = decodeURIComponent(restoreDeletedNodeMatch[1]);
+      const result = await invokeTool('write.restore_node', { args: { entryId }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (pathname === '/api/v1/facts' && req.method === 'POST') {
+      const body = await readBody(req);
+      const result = await invokeTool('write.upsert_fact', { args: { fact: body }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (pathname === '/api/v1/materials' && req.method === 'POST') {
+      const body = await readBody(req);
+      const result = await invokeTool('write.upsert_material', { args: { material: body }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (pathname === '/api/v1/foreshadows' && req.method === 'POST') {
+      const body = await readBody(req);
+      const result = await invokeTool('write.upsert_foreshadow', { args: { foreshadow: body }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (pathname === '/api/v1/character-states' && req.method === 'POST') {
+      const body = await readBody(req);
+      const result = await invokeTool('write.upsert_character_state', { args: { state: body }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
+    if (pathname === '/api/v1/references' && req.method === 'POST') {
+      const body = await readBody(req);
+      const result = await invokeTool('write.upsert_reference', { args: { reference: body }, returnMode: 'full' }, { actor: getUiActor() });
+      sendJson(res, 200, result);
+      return;
+    }
+
     if (pathname === '/api/v1/reviews' && req.method === 'GET') {
       const bookId = searchParams.get('bookId') || undefined;
       sendJson(res, 200, { items: listReviewItems(bookId || undefined) });
@@ -316,7 +440,7 @@ const server = createServer(async (req, res) => {
 
     const reviewApplyMatch = pathname.match(/^\/api\/v1\/reviews\/([^/]+)\/(apply|discard)$/);
     if (reviewApplyMatch && req.method === 'POST') {
-      const actor = { actorType: 'ui' as const, actorId: 'ui', scopes: TOOL_DEFINITIONS.flatMap((tool) => tool.scopes) };
+      const actor = getUiActor();
       const reviewId = decodeURIComponent(reviewApplyMatch[1]);
       const action = reviewApplyMatch[2];
       if (action === 'apply') {
@@ -331,7 +455,7 @@ const server = createServer(async (req, res) => {
 
     if (pathname === '/api/v1/checkpoints' && req.method === 'POST') {
       const body = await readBody(req);
-      const actor = { actorType: 'ui' as const, actorId: 'ui', scopes: TOOL_DEFINITIONS.flatMap((tool) => tool.scopes) };
+      const actor = getUiActor();
       const result = await invokeTool('ops.create_checkpoint', { args: body }, { actor });
       sendJson(res, 200, result);
       return;
@@ -339,7 +463,7 @@ const server = createServer(async (req, res) => {
 
     if (pathname === '/api/v1/exports' && req.method === 'POST') {
       const body = await readBody(req);
-      const actor = { actorType: 'ui' as const, actorId: 'ui', scopes: TOOL_DEFINITIONS.flatMap((tool) => tool.scopes) };
+      const actor = getUiActor();
       const result = await invokeTool('ops.export_book', { args: body, returnMode: 'full' }, { actor });
       sendJson(res, 200, result);
       return;
