@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import type { AIReviewItem, FactEntry, StoryNode } from '../src/types.ts';
+import type {
+  AIReviewItem,
+  Book,
+  FactEntry,
+  ForeshadowEntry,
+  MaterialEntry,
+  ReferenceLink,
+  SceneCharacterState,
+  StoryNode,
+} from '../src/types.ts';
 import type { AgentRun, AgentToolDefinition, AgentToolInvokeRequest, AgentToolScope, OperationJournalEntry } from '../shared/agent.ts';
 import { executeAITask } from './ai.ts';
 import {
@@ -11,22 +20,34 @@ import {
   findNode,
   getAgentRun,
   getBookCharacterStates,
+  getBookCheckpoints,
   getBookFacts,
   getBookMaterials,
   getBookNodes,
   getContentSnapshot,
   getIdempotentResponse,
+  getNodeHistory,
   getReviewItem,
   getSettingsSnapshot,
+  listDeletedNodes,
   listOperationJournal,
   listReviewItems,
+  moveNode,
+  moveNodeToRecycleBin,
   rollbackCheckpoint,
   saveAgentRun,
   saveContentSnapshot,
   saveHistoryEntry,
   saveIdempotentResponse,
   saveReviewItem,
+  searchNodes,
+  restoreNodeFromRecycleBin,
   upsertFact,
+  upsertForeshadow,
+  upsertMaterial,
+  upsertCharacterState,
+  upsertReference,
+  updateBook,
   updateReviewItemStatus,
   withContentMutation,
   refreshBookWordCount,
@@ -204,6 +225,54 @@ export const TOOL_DEFINITIONS: AgentToolDefinition[] = [
     outputSchema: { items: 'AIReviewItem[]' },
   },
   {
+    name: 'read.search_nodes',
+    description: '按标题、摘要、正文和元数据搜索节点。',
+    scopes: ['project.read'],
+    sideEffect: false,
+    inputSchema: { query: 'string', bookId: 'string?', limit: 'number?', type: 'NodeType?' },
+    outputSchema: { items: 'Array<{nodeId,title,score,excerpt}>' },
+  },
+  {
+    name: 'read.node_history',
+    description: '读取节点历史版本。',
+    scopes: ['project.read'],
+    sideEffect: false,
+    inputSchema: { nodeId: 'string', limit: 'number?' },
+    outputSchema: { items: 'HistoryEntry[]' },
+  },
+  {
+    name: 'read.checkpoints',
+    description: '读取某本书的版本点列表。',
+    scopes: ['project.read'],
+    sideEffect: false,
+    inputSchema: { bookId: 'string' },
+    outputSchema: { items: 'BookCheckpoint[]' },
+  },
+  {
+    name: 'read.deleted_nodes',
+    description: '读取某本书的节点回收站。',
+    scopes: ['project.read'],
+    sideEffect: false,
+    inputSchema: { bookId: 'string' },
+    outputSchema: { items: 'DeletedNodeEntry[]' },
+  },
+  {
+    name: 'write.create_book',
+    description: '手工创建新书，可选附带初始卷列表。',
+    scopes: ['project.write.structure'],
+    sideEffect: true,
+    inputSchema: { title: 'string', premise: 'string?', worldSetting: 'string?', characters: 'Character[]?', initialVolumes: 'Array<{title,summary}>?' },
+    outputSchema: { book: 'Book' },
+  },
+  {
+    name: 'write.update_book',
+    description: '更新书籍标题、前提、世界观、角色等元数据。',
+    scopes: ['project.write.metadata'],
+    sideEffect: true,
+    inputSchema: { bookId: 'string', bookPatch: 'Partial<Book>' },
+    outputSchema: { bookId: 'string', book: 'Book' },
+  },
+  {
     name: 'write.update_node_content',
     description: '直接更新节点正文，并自动记历史与版本点。',
     scopes: ['project.write.content'],
@@ -242,6 +311,62 @@ export const TOOL_DEFINITIONS: AgentToolDefinition[] = [
     sideEffect: true,
     inputSchema: { fact: 'FactEntry' },
     outputSchema: { fact: 'FactEntry' },
+  },
+  {
+    name: 'write.upsert_material',
+    description: '新增或更新素材条目。',
+    scopes: ['project.write.metadata'],
+    sideEffect: true,
+    inputSchema: { material: 'MaterialEntry' },
+    outputSchema: { material: 'MaterialEntry' },
+  },
+  {
+    name: 'write.upsert_foreshadow',
+    description: '新增或更新伏笔条目。',
+    scopes: ['project.write.metadata'],
+    sideEffect: true,
+    inputSchema: { foreshadow: 'ForeshadowEntry' },
+    outputSchema: { foreshadow: 'ForeshadowEntry' },
+  },
+  {
+    name: 'write.upsert_character_state',
+    description: '新增或更新角色状态账本条目。',
+    scopes: ['project.write.metadata'],
+    sideEffect: true,
+    inputSchema: { state: 'SceneCharacterState' },
+    outputSchema: { state: 'SceneCharacterState' },
+  },
+  {
+    name: 'write.upsert_reference',
+    description: '新增或更新事实/伏笔/素材引用链接。',
+    scopes: ['project.write.metadata'],
+    sideEffect: true,
+    inputSchema: { reference: 'ReferenceLink' },
+    outputSchema: { reference: 'ReferenceLink' },
+  },
+  {
+    name: 'write.move_node',
+    description: '移动节点到新的父节点和顺序位置。',
+    scopes: ['project.write.structure'],
+    sideEffect: true,
+    inputSchema: { nodeId: 'string', newParentId: 'string|null', newOrder: 'number?' },
+    outputSchema: { nodeId: 'string', parentId: 'string|null', order: 'number' },
+  },
+  {
+    name: 'write.delete_node',
+    description: '删除节点子树并放入节点回收站。',
+    scopes: ['project.write.structure'],
+    sideEffect: true,
+    inputSchema: { nodeId: 'string' },
+    outputSchema: { recycleEntryId: 'string', nodeId: 'string', deletedCount: 'number' },
+  },
+  {
+    name: 'write.restore_node',
+    description: '从节点回收站恢复已删除子树。',
+    scopes: ['project.write.structure'],
+    sideEffect: true,
+    inputSchema: { entryId: 'string' },
+    outputSchema: { entryId: 'string', nodeId: 'string', restoredCount: 'number' },
   },
   {
     name: 'write.apply_review_item',
@@ -469,11 +594,108 @@ export const invokeTool = async (
       return { items };
     }
 
+    if (toolName === 'read.search_nodes') {
+      const items = searchNodes(getContentSnapshot(), {
+        query: String(args.query || ''),
+        bookId: args.bookId ? String(args.bookId) : undefined,
+        limit: args.limit ? Number(args.limit) : undefined,
+        type: args.type ? String(args.type) as StoryNode['type'] : undefined,
+      });
+      appendRunStep(request.sessionId, toolName, `搜索到 ${items.length} 个节点`, 'completed');
+      return { items };
+    }
+
+    if (toolName === 'read.node_history') {
+      const nodeId = String(args.nodeId || '');
+      const items = getNodeHistory(getContentSnapshot(), nodeId, Number(args.limit || 20));
+      appendRunStep(request.sessionId, toolName, `读取 ${items.length} 条节点历史`, 'completed');
+      return { items };
+    }
+
+    if (toolName === 'read.checkpoints') {
+      const bookId = String(args.bookId || '');
+      const items = getBookCheckpoints(getContentSnapshot(), bookId);
+      appendRunStep(request.sessionId, toolName, `读取 ${items.length} 个版本点`, 'completed');
+      return { items };
+    }
+
+    if (toolName === 'read.deleted_nodes') {
+      const bookId = String(args.bookId || '');
+      const items = listDeletedNodes(getContentSnapshot(), bookId);
+      appendRunStep(request.sessionId, toolName, `读取 ${items.length} 条节点回收站记录`, 'completed');
+      return { items };
+    }
+
     if (toolName === 'ops.operation_journal') {
       const limit = Math.min(200, Math.max(1, Number(args.limit || 50)));
       const entries = listOperationJournal(limit);
       appendRunStep(request.sessionId, toolName, `读取 ${entries.length} 条操作日志`, 'completed');
       return { entries };
+    }
+
+    if (toolName === 'write.create_book') {
+      const title = String(args.title || '').trim();
+      if (!title) throw new Error('书名不能为空');
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const book = createBook(snapshot, {
+          title,
+          premise: String(args.premise || ''),
+          worldSetting: String(args.worldSetting || ''),
+          characters: Array.isArray(args.characters) ? args.characters as Book['characters'] : [],
+        });
+        const initialVolumes = Array.isArray(args.initialVolumes)
+          ? args.initialVolumes as Array<{ title?: string; summary?: string }>
+          : [];
+        initialVolumes.forEach((entry, index) => {
+          if (!String(entry.title || '').trim()) return;
+          createNode(snapshot, {
+            bookId: book.id,
+            parentId: null,
+            type: 'volume',
+            title: String(entry.title || '').trim(),
+            summary: String(entry.summary || ''),
+            status: 'empty',
+            order: index,
+          });
+        });
+        refreshBookWordCount(snapshot, book.id);
+        return {
+          result: { book },
+          checkpointBookId: book.id,
+          changes: [{
+            entityType: 'book',
+            entityId: book.id,
+            bookId: book.id,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `创建书籍：${book.title}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, `创建书籍 ${title}`, 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.update_book') {
+      const bookId = String(args.bookId || '');
+      const bookPatch = (args.bookPatch || {}) as Partial<Book>;
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const book = updateBook(snapshot, bookId, bookPatch);
+        return {
+          result: { bookId, book },
+          checkpointBookId: book.id,
+          changes: [{
+            entityType: 'book',
+            entityId: book.id,
+            bookId: book.id,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `更新书籍：${book.title}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, `更新书籍 ${bookId}`, 'completed');
+      return response;
     }
 
     if (toolName === 'write.update_node_content') {
@@ -610,6 +832,198 @@ export const invokeTool = async (
         };
       });
       appendRunStep(request.sessionId, toolName, '更新事实库条目', 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.upsert_material') {
+      const material = args.material as MaterialEntry;
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const payload: MaterialEntry = {
+          ...material,
+          id: material.id || createId(),
+          createdAt: material.createdAt || Date.now(),
+          updatedAt: Date.now(),
+        };
+        upsertMaterial(snapshot, payload);
+        return {
+          result: { material: payload },
+          checkpointBookId: payload.bookId,
+          changes: [{
+            entityType: 'material',
+            entityId: payload.id,
+            bookId: payload.bookId,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `更新素材：${payload.title.slice(0, 32)}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, '更新素材条目', 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.upsert_foreshadow') {
+      const foreshadow = args.foreshadow as ForeshadowEntry;
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const payload: ForeshadowEntry = {
+          ...foreshadow,
+          id: foreshadow.id || createId(),
+          createdAt: foreshadow.createdAt || Date.now(),
+          updatedAt: Date.now(),
+        };
+        upsertForeshadow(snapshot, payload);
+        return {
+          result: { foreshadow: payload },
+          checkpointBookId: payload.bookId,
+          changes: [{
+            entityType: 'foreshadow',
+            entityId: payload.id,
+            bookId: payload.bookId,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `更新伏笔：${payload.title.slice(0, 32)}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, '更新伏笔条目', 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.upsert_character_state') {
+      const state = args.state as SceneCharacterState;
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const fallbackId = snapshot.characterStates.find((entry) =>
+          entry.bookId === state.bookId &&
+          entry.nodeId === state.nodeId &&
+          entry.characterName === state.characterName
+        )?.id;
+        const payload: SceneCharacterState = {
+          ...state,
+          id: state.id || fallbackId || createId(),
+          updatedAt: Date.now(),
+        };
+        upsertCharacterState(snapshot, payload);
+        return {
+          result: { state: payload },
+          checkpointBookId: payload.bookId,
+          changes: [{
+            entityType: 'character-state',
+            entityId: payload.id,
+            bookId: payload.bookId,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `更新角色状态：${payload.characterName}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, '更新角色状态账本', 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.upsert_reference') {
+      const reference = args.reference as ReferenceLink;
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const fallbackId = snapshot.references.find((entry) =>
+          entry.bookId === reference.bookId &&
+          entry.entityType === reference.entityType &&
+          entry.entityId === reference.entityId &&
+          entry.nodeId === reference.nodeId
+        )?.id;
+        const payload: ReferenceLink = {
+          ...reference,
+          id: reference.id || fallbackId || createId(),
+          createdAt: reference.createdAt || Date.now(),
+        };
+        upsertReference(snapshot, payload);
+        return {
+          result: { reference: payload },
+          checkpointBookId: payload.bookId,
+          changes: [{
+            entityType: 'reference',
+            entityId: payload.id,
+            bookId: payload.bookId,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `更新引用：${payload.entityType}/${payload.entityId}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, '更新引用链接', 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.move_node') {
+      const nodeId = String(args.nodeId || '');
+      const newParentId = args.newParentId === null || args.newParentId === undefined || args.newParentId === ''
+        ? null
+        : String(args.newParentId);
+      const newOrder = args.newOrder === undefined ? undefined : Number(args.newOrder);
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const moved = moveNode(snapshot, nodeId, newParentId, newOrder);
+        return {
+          result: { nodeId: moved.id, parentId: moved.parentId, order: moved.order },
+          checkpointBookId: moved.bookId,
+          changes: [{
+            entityType: 'node',
+            entityId: moved.id,
+            bookId: moved.bookId,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `移动节点：${moved.title}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, `移动节点 ${nodeId}`, 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.delete_node') {
+      const nodeId = String(args.nodeId || '');
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const recycleEntry = moveNodeToRecycleBin(snapshot, nodeId);
+        return {
+          result: {
+            recycleEntryId: recycleEntry.id,
+            nodeId: recycleEntry.rootNodeId,
+            deletedCount: recycleEntry.data.nodes.length,
+          },
+          checkpointBookId: recycleEntry.bookId,
+          changes: [{
+            entityType: 'deleted-node',
+            entityId: recycleEntry.id,
+            bookId: recycleEntry.bookId,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `删除节点到回收站：${recycleEntry.rootNodeTitle}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, `删除节点 ${nodeId}`, 'completed');
+      return response;
+    }
+
+    if (toolName === 'write.restore_node') {
+      const entryId = String(args.entryId || '');
+      const response = withMutation(toolName, context.actor, request, (snapshot) => {
+        const { recycleEntry, restoredRootNodeId } = restoreNodeFromRecycleBin(snapshot, entryId);
+        return {
+          result: {
+            entryId: recycleEntry.id,
+            nodeId: restoredRootNodeId,
+            restoredCount: recycleEntry.data.nodes.length,
+          },
+          checkpointBookId: recycleEntry.bookId,
+          changes: [{
+            entityType: 'node',
+            entityId: restoredRootNodeId,
+            bookId: recycleEntry.bookId,
+            beforeVersion: null,
+            afterVersion: null,
+            summary: `恢复节点：${recycleEntry.rootNodeTitle}`,
+          }],
+        };
+      });
+      appendRunStep(request.sessionId, toolName, `恢复节点 ${entryId}`, 'completed');
       return response;
     }
 
