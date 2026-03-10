@@ -77,7 +77,7 @@ Authorization: Bearer <agent-token>
   "ok": true,
   "service": "agent-ready-backend",
   "storage": "sqlite",
-  "tools": 18
+  "tools": 37
 }
 ```
 
@@ -178,8 +178,12 @@ curl -X POST \
 
 ### 8.1 书籍与快照
 - `GET /api/v1/books`
+- `POST /api/v1/books`
+- `PATCH /api/v1/books/{bookId}`
 - `GET /api/v1/books/{bookId}/tree`
 - `GET /api/v1/books/{bookId}/snapshot`
+- `GET /api/v1/books/{bookId}/checkpoints`
+- `GET /api/v1/books/{bookId}/deleted-nodes`
 
 `tree` 返回：
 - `book`
@@ -192,6 +196,42 @@ curl -X POST \
 `snapshot` 额外返回：
 - `foreshadows`
 - `references`
+
+`POST /api/v1/books` 请求示例：
+```json
+{
+  "title": "新书计划",
+  "premise": "少年与旧神交易。",
+  "worldSetting": "海雾都市",
+  "characters": [],
+  "initialVolumes": [
+    { "title": "第一卷", "summary": "交易开始" }
+  ]
+}
+```
+
+`PATCH /api/v1/books/{bookId}` 请求体直接传书籍 patch，例如：
+```json
+{
+  "title": "新书计划·改",
+  "worldSetting": "被潮汐吞没的海雾都市"
+}
+```
+
+### 8.1.1 节点治理
+- `GET /api/v1/nodes/search?bookId=...&query=...`
+- `GET /api/v1/nodes/{nodeId}/history`
+- `POST /api/v1/nodes/{nodeId}/move`
+- `DELETE /api/v1/nodes/{nodeId}`
+- `POST /api/v1/deleted-nodes/{entryId}/restore`
+
+`POST /api/v1/nodes/{nodeId}/move` 请求示例：
+```json
+{
+  "newParentId": "chapter-2",
+  "newOrder": 0
+}
+```
 
 ### 8.2 审阅项
 - `GET /api/v1/reviews?bookId=...`
@@ -258,6 +298,15 @@ curl -X POST \
 }
 ```
 
+### 8.7 内容知识库写入
+- `POST /api/v1/facts`
+- `POST /api/v1/materials`
+- `POST /api/v1/foreshadows`
+- `POST /api/v1/character-states`
+- `POST /api/v1/references`
+
+这些接口的请求体直接传对应实体 JSON，服务端会统一走治理工具，自动写操作日志和版本点。
+
 ## 9. 工具目录
 以下工具由 `GET /api/v1/agent/tools` 动态返回。这里给出稳定清单和用途。
 
@@ -268,15 +317,28 @@ curl -X POST \
 | `read.book_tree` | `project.read` | 读取单书结构树、事实、素材、角色账本 |
 | `read.node_context` | `project.read` | 读取节点上下文、祖先、线性前文和局部资料 |
 | `read.review_items` | `project.read` | 读取待审阅结果 |
+| `read.search_nodes` | `project.read` | 按标题/摘要/正文/元数据搜索节点 |
+| `read.node_history` | `project.read` | 读取节点历史版本 |
+| `read.checkpoints` | `project.read` | 读取单书版本点 |
+| `read.deleted_nodes` | `project.read` | 读取节点回收站 |
 
 ### 9.2 Write
 | Tool | Scope | 用途 |
 | --- | --- | --- |
+| `write.create_book` | `project.write.structure` | 手工创建书籍，可附带初始卷 |
+| `write.update_book` | `project.write.metadata` | 更新书名、前提、世界观、角色等 |
 | `write.update_node_content` | `project.write.content` | 直接改正文，自动记历史和版本点 |
 | `write.update_node_summary` | `project.write.metadata` | 改节点摘要 |
 | `write.create_child_node` | `project.write.structure` | 创建子节点 |
 | `write.update_node_meta` | `project.write.metadata` | 改场景元数据 |
 | `write.upsert_fact` | `project.write.metadata` | 新增或更新事实 |
+| `write.upsert_material` | `project.write.metadata` | 新增或更新素材 |
+| `write.upsert_foreshadow` | `project.write.metadata` | 新增或更新伏笔 |
+| `write.upsert_character_state` | `project.write.metadata` | 新增或更新角色状态账本 |
+| `write.upsert_reference` | `project.write.metadata` | 新增或更新事实/伏笔/素材引用 |
+| `write.move_node` | `project.write.structure` | 改节点父级和顺序 |
+| `write.delete_node` | `project.write.structure` | 删除节点子树并进入回收站 |
+| `write.restore_node` | `project.write.structure` | 从节点回收站恢复子树 |
 | `write.apply_review_item` | `review.apply` | 应用 AI 审阅项 |
 
 ### 9.3 Ops
@@ -315,8 +377,9 @@ AI 写作工具大多支持 `applyMode`：
 1. `GET /api/v1/agent/tools`
 2. `read.project_overview`
 3. `read.book_tree`
-4. `read.node_context`
-5. `ai.project_qa` / `ai.creative_rescue`
+4. `read.search_nodes`
+5. `read.node_context`
+6. `ai.project_qa` / `ai.creative_rescue`
 
 ### 11.2 先提案再落稿
 1. `ai.draft_scene` with `applyMode=proposal`
@@ -328,6 +391,14 @@ AI 写作工具大多支持 `applyMode`：
 2. `write.update_node_content` with `idempotencyKey`
 3. `ops.operation_journal`
 4. 必要时 `ops.rollback_checkpoint`
+
+### 11.4 内容治理
+1. `write.create_book`
+2. `write.update_book`
+3. `write.move_node`
+4. `write.delete_node`
+5. `read.deleted_nodes`
+6. `write.restore_node`
 
 ## 12. 错误语义
 | 状态码 | 含义 |

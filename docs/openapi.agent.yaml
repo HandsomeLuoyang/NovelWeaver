@@ -167,6 +167,53 @@ paths:
       responses:
         '200':
           description: Books
+    post:
+      summary: Create a book
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                premise:
+                  type: string
+                worldSetting:
+                  type: string
+                characters:
+                  type: array
+                  items:
+                    type: object
+                initialVolumes:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '201':
+          description: Book created
+  /api/v1/books/{bookId}:
+    patch:
+      summary: Update a book
+      security: []
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Book updated
   /api/v1/books/{bookId}/tree:
     get:
       summary: Read book tree and related side data
@@ -193,6 +240,125 @@ paths:
       responses:
         '200':
           description: Book snapshot
+  /api/v1/books/{bookId}/checkpoints:
+    get:
+      summary: List checkpoints for a book
+      security: []
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Checkpoints
+  /api/v1/books/{bookId}/deleted-nodes:
+    get:
+      summary: List deleted node recycle-bin entries for a book
+      security: []
+      parameters:
+        - in: path
+          name: bookId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Deleted nodes
+  /api/v1/nodes/search:
+    get:
+      summary: Search nodes by title, summary, content and meta
+      security: []
+      parameters:
+        - in: query
+          name: query
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: bookId
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Search results
+  /api/v1/nodes/{nodeId}/history:
+    get:
+      summary: List history entries for a node
+      security: []
+      parameters:
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Node history
+  /api/v1/nodes/{nodeId}/move:
+    post:
+      summary: Move a node to a new parent/order
+      security: []
+      parameters:
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                newParentId:
+                  type: string
+                  nullable: true
+                newOrder:
+                  type: integer
+      responses:
+        '200':
+          description: Node moved
+  /api/v1/nodes/{nodeId}:
+    delete:
+      summary: Delete a node subtree into recycle bin
+      security: []
+      parameters:
+        - in: path
+          name: nodeId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Node deleted
+  /api/v1/deleted-nodes/{entryId}/restore:
+    post:
+      summary: Restore a deleted node subtree from recycle bin
+      security: []
+      parameters:
+        - in: path
+          name: entryId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Node restored
   /api/v1/reviews:
     get:
       summary: List review items
@@ -261,6 +427,76 @@ paths:
       responses:
         '200':
           description: Export result
+  /api/v1/facts:
+    post:
+      summary: Upsert a fact entry
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Fact upserted
+  /api/v1/materials:
+    post:
+      summary: Upsert a material entry
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Material upserted
+  /api/v1/foreshadows:
+    post:
+      summary: Upsert a foreshadow entry
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Foreshadow upserted
+  /api/v1/character-states:
+    post:
+      summary: Upsert a scene character state entry
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Character state upserted
+  /api/v1/references:
+    post:
+      summary: Upsert a reference link
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Reference link upserted
   /api/v1/models:
     get:
       summary: List models and config
